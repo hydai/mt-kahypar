@@ -115,6 +115,11 @@ enum class LabelPropagationAlgorithm : uint8_t {
   do_nothing
 };
 
+enum class ClusterLabelPropagationAlgorithm : uint8_t {
+  cluster_lp,
+  do_nothing
+};
+
 std::ostream & operator<< (std::ostream& os, const Type& type) {
   switch (type) {
     case Type::Unweighted: return os << "unweighted";
@@ -254,6 +259,15 @@ std::ostream & operator<< (std::ostream& os, const LabelPropagationAlgorithm& al
   return os << static_cast<uint8_t>(algo);
 }
 
+std::ostream & operator<< (std::ostream& os, const ClusterLabelPropagationAlgorithm& algo) {
+  switch (algo) {
+    case ClusterLabelPropagationAlgorithm::cluster_lp: return os << "cluster_lp";
+    case ClusterLabelPropagationAlgorithm::do_nothing: return os << "do_nothing";
+      // omit default case to trigger compiler warning for missing cases
+  }
+  return os << static_cast<uint8_t>(algo);
+}
+
 static CommunityAssignmentObjective communityAssignmentObjectiveFromString(const std::string& objective) {
   if (objective == "vertex_objective") {
     return CommunityAssignmentObjective::vertex_objective;
@@ -386,6 +400,16 @@ static LabelPropagationAlgorithm labelPropagationAlgorithmFromString(const std::
   }
   ERROR("Illegal option: " + type);
   return LabelPropagationAlgorithm::do_nothing;
+}
+
+static ClusterLabelPropagationAlgorithm clusterLabelPropagationAlgorithmFromString(const std::string& type) {
+  if (type == "cluster_lp") {
+    return ClusterLabelPropagationAlgorithm::cluster_lp;
+  } else if (type == "do_nothing") {
+    return ClusterLabelPropagationAlgorithm::do_nothing;
+  }
+  ERROR("Illegal option: " + type);
+  return ClusterLabelPropagationAlgorithm::do_nothing;
 }
 
 }  // namesapce mt_kahypar

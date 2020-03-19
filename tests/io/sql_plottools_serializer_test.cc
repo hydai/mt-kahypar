@@ -42,12 +42,13 @@ std::unordered_map<std::string, std::string> target_struct_prefix =
   { {"PartitioningParameters", ""}, {"CommunityDetectionParameters", "community_"}, {"CommunityRedistributionParameters", "community_redistribution_"},
     {"PreprocessingParameters", ""}, {"RatingParameters", "rating_"}, {"CoarseningParameters", "coarsening_"},
     {"InitialPartitioningParameters", "initial_partitioning_"}, {"SparsificationParameters", "sparsification_"},
-    {"LabelPropagationParameters", "lp_"}, {"RefinementParameters", ""}, {"SharedMemoryParameters", ""} };
+    {"LabelPropagationParameters", "lp_"}, {"ClusterLabelPropagationParameters", "cluster_lp_"}, {"RefinementParameters", ""},
+    {"SharedMemoryParameters", ""} };
 
 std::set<std::string> excluded_members =
   { "verbose_output", "quiet_mode", "detailed_timings", "show_memory_consumption", "enable_progress_bar", "sp_process_output",
     "write_partition_file", "graph_partition_filename", "graph_community_filename", "community_detection",
-    "community_redistribution", "coarsening_rating", "label_propagation", "lp_execute_sequential",
+    "community_redistribution", "coarsening_rating", "label_propagation", "cluster_label_propagation", "lp_execute_sequential",
     "enable_profiler", "snapshot_interval", "initial_partitioning_refinement", "initial_partitioning_sparsification" };
 
 bool is_target_struct(const std::string& line) {

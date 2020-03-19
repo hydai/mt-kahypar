@@ -188,13 +188,25 @@ inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParam
   return str;
 }
 
+struct ClusterLabelPropagationParameters {
+  ClusterLabelPropagationAlgorithm algorithm = ClusterLabelPropagationAlgorithm::do_nothing;
+};
+
+inline std::ostream & operator<< (std::ostream& str, const ClusterLabelPropagationParameters& params) {
+  str << "  Cluster Label Propagation Parameters:" << std::endl;
+  str << "    Algorithm:                        " << params.algorithm << std::endl;
+  return str;
+}
+
 struct RefinementParameters {
   LabelPropagationParameters label_propagation;
+  ClusterLabelPropagationParameters cluster_label_propagation;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const RefinementParameters& params) {
   str << "Refinement Parameters:" << std::endl;
   str << std::endl << params.label_propagation;
+  str << std::endl << params.cluster_label_propagation;
   return str;
 }
 

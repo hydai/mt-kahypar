@@ -274,7 +274,15 @@ po::options_description createRefinementOptionsDescription(Context& context,
       ("r-lp-numa-aware",
       po::value<bool>(&context.refinement.label_propagation.numa_aware)->value_name("<bool>"),
       "If true, label propagation is executed numa friendly (which means that nodes are processed on its numa nodes)\n"
-      "(default false)");
+      "(default false)")
+      ("r-cluster-lp-type",
+      po::value<std::string>()->value_name("<string>")->notifier(
+        [&](const std::string& type) {
+        context.refinement.cluster_label_propagation.algorithm = clusterLabelPropagationAlgorithmFromString(type);
+      }),
+      "Cluster Label Propagation Algorithm:\n"
+      "- cluster_lp\n"
+      "- do_nothing");
   }
   return options;
 }
