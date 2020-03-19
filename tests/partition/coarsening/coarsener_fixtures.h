@@ -153,7 +153,7 @@ void reAddsHyperedgesOfSizeOneDuringUncoarsening(Coarsener& coarsener,
   }
   PartitionedHyperGraph& partitioned_hypergraph = coarsener.coarsestPartitionedHypergraph();
   assignPartitionIDs(partitioned_hypergraph);
-  coarsener.uncoarsen(refiner);
+  coarsener.uncoarsen(refiner, refiner);
   for (const HyperedgeID& he : single_node_hes) {
     ASSERT_THAT(hypergraph.edgeIsEnabled(he), Eq(true)) << V(he);
   }
@@ -193,7 +193,7 @@ void restoresParallelHyperedgesDuringUncoarsening(Coarsener& coarsener,
   }
   PartitionedHyperGraph& partitioned_hypergraph = coarsener.coarsestPartitionedHypergraph();
   assignPartitionIDs(partitioned_hypergraph);
-  coarsener.uncoarsen(refiner);
+  coarsener.uncoarsen(refiner, refiner);
   for (const HyperedgeID& he : parallel_hes) {
     ASSERT_THAT(hypergraph.edgeIsEnabled(he), Eq(true)) << V(he);
   }
