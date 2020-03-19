@@ -423,8 +423,9 @@ class MultilevelCoarsenerT : public ICoarsenerT<TypeTraits>,
     return success;
   }
 
-  PartitionedHyperGraph&& uncoarsenImpl(std::unique_ptr<Refiner>& label_propagation) override {
-    return Base::doUncoarsen(label_propagation);
+  PartitionedHyperGraph&& uncoarsenImpl(std::unique_ptr<Refiner>& label_propagation,
+                                        std::unique_ptr<Refiner>& cluster_label_propagation) override {
+    return Base::doUncoarsen(label_propagation, cluster_label_propagation);
   }
 
   HyperGraph& coarsestHypergraphImpl() override {

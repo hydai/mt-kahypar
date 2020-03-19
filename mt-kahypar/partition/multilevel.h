@@ -100,8 +100,12 @@ class RefinementTask : public tbb::task {
       LabelPropagationFactory::getInstance().createObject(
         _context.refinement.label_propagation.algorithm,
         coarsest_partitioned_hypergraph, _context, _task_group_id);
+    std::unique_ptr<IRefiner> cluster_label_propagation =
+      ClusterLabelPropagationFactory::getInstance().createObject(
+        _context.refinement.cluster_label_propagation.algorithm,
+        coarsest_partitioned_hypergraph, _context, _task_group_id);
 
-    _partitioned_hg = _coarsener->uncoarsen(label_propagation);
+    _partitioned_hg = _coarsener->uncoarsen(label_propagation, cluster_label_propagation);
     utils::Timer::instance().stop_timer("refinement");
 
     if ( _top_level ) {
