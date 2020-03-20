@@ -303,7 +303,7 @@ class MultilevelCoarsenerT : public ICoarsenerT<TypeTraits>,
     for ( const size_t& c : _num_conflicts ) {
       num_conflicts += c;
     }
-    utils::Stats::instance().add_stat("coarsening_num_conflicts", num_matchings);
+    utils::Stats::instance().add_stat("coarsening_num_conflicts", num_conflicts);
     utils::Stats::instance().add_stat("coarsening_num_matchings", num_matchings);
     DBG << V(num_conflicts) << V(num_matchings);
 
