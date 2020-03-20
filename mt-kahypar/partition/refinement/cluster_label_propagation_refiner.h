@@ -39,6 +39,26 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
   static constexpr bool debug = false;
   static constexpr bool enable_heavy_assert = false;
 
+  struct ClusterMoveScore {
+    ClusterMoveScore() :
+      cluster(),
+      best_gain(0),
+      best_size(0),
+      best_block(kInvalidPartition) { }
+
+    void reset() {
+      cluster.clear();
+      best_gain = 0;
+      best_size = 0;
+      best_block = kInvalidPartition;
+    }
+
+    parallel::scalable_vector<HypernodeID> cluster;
+    Gain best_gain;
+    size_t best_size;
+    PartitionID best_block;
+  };
+
  public:
   explicit ClusterLabelPropagationRefinerT(HyperGraph&,
                                     const Context& context,
@@ -48,6 +68,7 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
     _nodes(),
     _marked(),
     _in_queue_hn(1),
+    _in_queue_he(1),
     _cluster_pin_count_in_part(),
     _cluster_pins_in_he(),
     _tmp_scores(context.partition.k, 0) { }
@@ -66,29 +87,40 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
     utils::Randomize::instance().shuffleVector(_nodes, _nodes.size(), sched_getcpu());
 
     HyperedgeWeight total_gain = 0;
+    ClusterMoveScore c_score;
+    parallel::scalable_vector<HypernodeWeight> cluster_weight(_context.partition.k, 0);
+    HypernodeWeight total_cluster_weight = 0;
     for ( const HypernodeID& hn : _nodes ) {
       const HypernodeID original_id = hypergraph.originalNodeID(hn);
       if ( !_marked[original_id] ) {
-        parallel::scalable_vector<HypernodeID> cluster;
-        parallel::scalable_vector<HypernodeWeight> cluster_weight(_context.partition.k, 0);
-        HypernodeWeight total_cluster_weight = 0;
-        parallel::scalable_queue<HypernodeID> q;
-        q.push(hn);
-        _in_queue_hn.set(original_id, true);
-        Gain best_gain = 0;
-        size_t best_size = 0;
-        PartitionID best_block = kInvalidPartition;
-        while(!q.empty() && cluster.size() < _context.refinement.cluster_label_propagation.max_cluster_size) {
-          const HypernodeID current_hn = q.front();
-          const HypernodeID original_hn_id = hypergraph.originalNodeID(current_hn);
-          q.pop();
+        ASSERT(c_score.cluster.size() == 0);
+        ASSERT(total_cluster_weight == 0);
+        ASSERT(std::accumulate(cluster_weight.begin(), cluster_weight.end(), 0) == 0);
+        ASSERT(std::accumulate(_tmp_scores.begin(), _tmp_scores.end(), 0) == 0);
 
-          updateScore(hypergraph, current_hn);
-          cluster.push_back(current_hn);
+        // Start cluster growing
+        parallel::scalable_queue<HypernodeID> queue;
+        queue.push(hn);
+        _in_queue_hn.set(original_id, true);
+        // We grow as long as there are vertices in the queue or the cluster
+        // reach the maximum allowed cluster size
+        while(!queue.empty() && c_score.cluster.size() < _context.refinement.cluster_label_propagation.max_cluster_size) {
+          const HypernodeID current_hn = queue.front();
+          const HypernodeID original_hn_id = hypergraph.originalNodeID(current_hn);
+          queue.pop();
+
+          // Compute gain of cluster to all blocks of the partition, if we
+          // add the current vertex to cluster
+          updateGainOfCluster(hypergraph, current_hn);
+
+          // Add vertex to cluster
+          c_score.cluster.push_back(current_hn);
           _marked[original_hn_id] = true;
           PartitionID from = hypergraph.partID(current_hn);
           cluster_weight[from] += hypergraph.nodeWeight(current_hn);
           total_cluster_weight += hypergraph.nodeWeight(current_hn);
+
+          // Update cluster pin counts and insert all adjacent vertices into queue
           for ( const HyperedgeID& he : hypergraph.incidentEdges(current_hn) ) {
             const HyperedgeID original_he_id = hypergraph.originalEdgeID(he);
             ++_cluster_pin_count_in_part[original_he_id][from];
@@ -96,8 +128,10 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
             if ( !_in_queue_he[original_he_id] ) {
               for ( const HypernodeID& pin : hypergraph.pins(he) ) {
                 const HypernodeID original_pin_id = hypergraph.originalNodeID(pin);
-                if ( !_in_queue_hn[original_pin_id] && !_marked[original_pin_id] && hypergraph.isBorderNode(pin) ) {
-                  q.push(pin);
+                if ( !_in_queue_hn[original_pin_id] &&
+                     !_marked[original_pin_id] &&
+                     hypergraph.isBorderNode(pin) ) {
+                  queue.push(pin);
                   _in_queue_hn.set(original_pin_id, true);
                 }
               }
@@ -105,55 +139,56 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
             }
           }
 
+          // Check if moving the cluster to an other block has a better gain
+          // than the current best move under the restriction that the balance
+          // constraint is not violated.
           for ( PartitionID to = 0; to < _context.partition.k; ++to ) {
-            if ( _tmp_scores[to] < best_gain &&
+            if ( _tmp_scores[to] < c_score.best_gain &&
                  hypergraph.partWeight(to) + total_cluster_weight - cluster_weight[to] <=
                  _context.partition.max_part_weights[to] ) {
-              best_gain = _tmp_scores[to];
-              best_size = cluster.size();
-              best_block = to;
+              c_score.best_gain = _tmp_scores[to];
+              c_score.best_size = c_score.cluster.size();
+              c_score.best_block = to;
             }
           }
         }
 
-        if ( best_block != kInvalidPartition ) {
-          while(cluster.size() > best_size) {
-            const HypernodeID hn = cluster.back();
-            resetClusterPinCount(hypergraph, hn);
-            cluster.pop_back();
-          }
-
-          for ( const HypernodeID& hn : cluster ) {
-            const PartitionID from = hypergraph.partID(hn);
-            resetClusterPinCount(hypergraph, hn);
-            if ( from != best_block ) {
-              hypergraph.changeNodePart(hn, from, best_block);
-            }
-          }
-          total_gain += best_gain;
+        if ( c_score.best_block != kInvalidPartition ) {
+          // In case move of cluster increase objective, we
+          // apply the move
+          applyClusterMove(hypergraph, c_score);
+          total_gain += c_score.best_gain;
         } else {
-          for ( const HypernodeID& hn : cluster ) {
+          // Otherwise, we only reset cluster pin counts
+          for ( const HypernodeID& hn : c_score.cluster ) {
             resetClusterPinCount(hypergraph, hn);
           }
         }
 
+        // Reset internal data structures
+        c_score.reset();
+        total_cluster_weight = 0;
         for (PartitionID to = 0; to < _context.partition.k; ++to) {
           _tmp_scores[to] = 0;
+          cluster_weight[to] = 0;
         }
         _in_queue_hn.reset();
         _in_queue_he.reset();
       }
     }
 
-
     HyperedgeWeight current_metric = best_metrics.getMetric(
       kahypar::Mode::direct_kway, _context.partition.objective);
     best_metrics.updateMetric(current_metric + total_gain,
       kahypar::Mode::direct_kway, _context.partition.objective);
-    return false;
+    ASSERT(best_metrics.getMetric(kahypar::Mode::direct_kway, _context.partition.objective) ==
+      metrics::objective(hypergraph, _context.partition.objective),
+      V(best_metrics.getMetric(kahypar::Mode::direct_kway, _context.partition.objective)) <<
+      V(metrics::objective(hypergraph, _context.partition.objective)));
+    return true;
   }
 
-  void updateScore(const HyperGraph& hypergraph,
+  void updateGainOfCluster(const HyperGraph& hypergraph,
                    const HypernodeID hn) {
     const PartitionID from = hypergraph.partID(hn);
     Gain internal_weight = 0;
@@ -173,7 +208,8 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
             }
           }
         }
-      } else if ( pin_count_in_from_part > 1 && pin_count_in_from_part == cluster_pin_count_in_from_part + 1 ) {
+      } else if ( ( pin_count_in_from_part > 1 || _cluster_pins_in_he[original_he_id] > 0 ) &&
+                    pin_count_in_from_part == cluster_pin_count_in_from_part + 1 ) {
         for (PartitionID to = 0; to < _context.partition.k; ++to) {
           if ( from != to ) {
             _tmp_scores[to] -= he_weight;
@@ -195,11 +231,39 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
     }
   }
 
+  void applyClusterMove(HyperGraph& hypergraph,
+                        ClusterMoveScore& c_score) {
+    ASSERT(c_score.best_block != kInvalidPartition);
+    ASSERT(c_score.best_gain < 0);
+    ASSERT(c_score.best_size <= c_score.cluster.size());
+
+    // Remove all vertices from cluster that are not contained
+    // in cluster with best gain
+    parallel::scalable_vector<HypernodeID>& cluster = c_score.cluster;
+    while(cluster.size() > c_score.best_size) {
+      const HypernodeID hn = cluster.back();
+      resetClusterPinCount(hypergraph, hn);
+      cluster.pop_back();
+    }
+
+    // Move cluster to block with best gain
+    const PartitionID to = c_score.best_block;
+    for ( const HypernodeID& hn : cluster ) {
+      const PartitionID from = hypergraph.partID(hn);
+      resetClusterPinCount(hypergraph, hn);
+      if ( from != to ) {
+        hypergraph.changeNodePart(hn, from, to);
+      }
+    }
+  }
+
   void resetClusterPinCount(const HyperGraph& hypergraph,
                             const HypernodeID hn) {
     const PartitionID from = hypergraph.partID(hn);
     for ( const HyperedgeID& he : hypergraph.incidentEdges(hn) ) {
       const HyperedgeID original_he_id = hypergraph.originalEdgeID(he);
+      ASSERT(_cluster_pin_count_in_part[original_he_id][from] > 0);
+      ASSERT(_cluster_pins_in_he[original_he_id] > 0);
       --_cluster_pin_count_in_part[original_he_id][from];
       --_cluster_pins_in_he[original_he_id];
     }
@@ -208,8 +272,10 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
   void initializeImpl(HyperGraph& hypergraph) override final {
     _nodes.clear();
     _marked.assign(hypergraph.initialNumNodes(), false);
-    _in_queue_hn.setSize(hypergraph.initialNumNodes());
-    _in_queue_he.setSize(hypergraph.initialNumEdges());
+    kahypar::ds::FastResetFlagArray<> tmp_in_queue_hn(hypergraph.initialNumNodes());
+    kahypar::ds::FastResetFlagArray<> tmp_in_queue_he(hypergraph.initialNumEdges());
+    _in_queue_hn.swap(tmp_in_queue_hn);
+    _in_queue_he.swap(tmp_in_queue_he);
     for ( const HypernodeID& hn : hypergraph.nodes() ) {
       if ( hypergraph.isBorderNode(hn) ) {
         _nodes.push_back(hn);
