@@ -282,7 +282,11 @@ po::options_description createRefinementOptionsDescription(Context& context,
       }),
       "Cluster Label Propagation Algorithm:\n"
       "- cluster_lp\n"
-      "- do_nothing");
+      "- do_nothing")
+      ("r-cluster-lp-max-cluster-size",
+      po::value<size_t>(&context.refinement.cluster_label_propagation.max_cluster_size)->value_name("<size_t>"),
+      "Maximum size of a cluster during cluster label propagation refinement \n"
+      "(default: 1)");
   }
   return options;
 }

@@ -190,11 +190,13 @@ inline std::ostream & operator<< (std::ostream& str, const LabelPropagationParam
 
 struct ClusterLabelPropagationParameters {
   ClusterLabelPropagationAlgorithm algorithm = ClusterLabelPropagationAlgorithm::do_nothing;
+  size_t max_cluster_size = 1;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const ClusterLabelPropagationParameters& params) {
   str << "  Cluster Label Propagation Parameters:" << std::endl;
   str << "    Algorithm:                        " << params.algorithm << std::endl;
+  str << "    Maximum Cluster Size:             " << params.max_cluster_size << std::endl;
   return str;
 }
 
