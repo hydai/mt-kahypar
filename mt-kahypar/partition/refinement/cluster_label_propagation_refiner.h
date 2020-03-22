@@ -86,7 +86,16 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
                   kahypar::Metrics& best_metrics) override final {
 
     HyperedgeWeight total_gain = 0;
+    // todo(heuer):
+    // 1.) How many iterations are required until we can terminate CLP?
+    //     a.) Fix number of iterations?
+    //     b.) Early stopping criteria based on active nodes ord improvement?
+    // 2.) Which nodes should be considered for current round?
     for ( size_t it = 0; it < _context.refinement.cluster_label_propagation.max_iterations; ++it ) {
+      // todo(heuer):
+      // 3.) How should we iterate over the set of active vertices?
+      //     a.) Random or sorted in decreasing order of their node degree or number
+      //         of incident cut hyperedges?
       utils::Randomize::instance().shuffleVector(_nodes, _nodes.size(), sched_getcpu());
 
       ClusterMoveScore c_score;
@@ -105,6 +114,10 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
           pq.push(original_id, 0);
           // We grow as long as there are vertices in the queue or the cluster
           // reach the maximum allowed cluster size
+          // todo(heuer):
+          // 4.) What should be the maximum cluster size?
+          //     a.) Fixed or dynamic based on instance (medium hyperedge size)?
+          //     b.) Is there an early stopping criteria when we should stop growing the cluster?
           while(!pq.empty() && c_score.cluster.size() < _context.refinement.cluster_label_propagation.max_cluster_size) {
             const HypernodeID original_hn_id = pq.top();
             const HypernodeID current_hn = hypergraph.globalNodeID(original_hn_id);
@@ -122,6 +135,11 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
             total_cluster_weight += hypergraph.nodeWeight(current_hn);
 
             // Update cluster pin counts and insert all adjacent vertices into queue
+            // todo(heuer):
+            // 5.) How to grow the cluster?
+            //     a.) BFS-style
+            //     b.) Number of incident hyperedges to cluster
+            //     c.) Number of incident cut hyperedges
             for ( const HyperedgeID& he : hypergraph.incidentEdges(current_hn) ) {
               const HyperedgeID original_he_id = hypergraph.originalEdgeID(he);
               ++_cluster_pin_count_in_part[original_he_id][from];
@@ -130,6 +148,8 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
                 for ( const HypernodeID& pin : hypergraph.pins(he) ) {
                   const HypernodeID original_pin_id = hypergraph.originalNodeID(pin);
                   const bool pq_contains_pin = pq.contains(original_pin_id);
+                  // todo(heuer):
+                  // 6.) Should non-border hypernodes be included in a cluster?
                   if ( !pq_contains_pin &&
                       !_marked[original_pin_id] &&
                       hypergraph.isBorderNode(pin) ) {
@@ -152,7 +172,10 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
                 c_score.best_gain = _tmp_scores[to];
                 c_score.best_size = c_score.cluster.size();
                 c_score.best_block = to;
-              } else if ( _tmp_scores[to] == c_score.best_gain &&
+              }
+              // todo(heuer):
+              // 7.) What should we do with zero-gain cluster moves?
+              else if ( _tmp_scores[to] == c_score.best_gain &&
                   hypergraph.partWeight(to) + total_cluster_weight - cluster_weight[to] <=
                   _context.partition.max_part_weights[to] &&
                   hypergraph.partWeight(to) < _context.partition.perfect_balance_part_weights[to] ) {
@@ -190,7 +213,7 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
       for ( size_t i = 0; i < _marked.size(); ++i ) {
         _marked[i] = false;
       }
-      LOG << "Total Improvement #" << it << " =" << total_gain;
+      DBG << "Total Improvement #" << it << " =" << total_gain;
     }
 
     HyperedgeWeight current_metric = best_metrics.getMetric(
@@ -201,7 +224,7 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
       metrics::objective(hypergraph, _context.partition.objective),
       V(best_metrics.getMetric(kahypar::Mode::direct_kway, _context.partition.objective)) <<
       V(metrics::objective(hypergraph, _context.partition.objective)));
-    LOG << "Total Improvement =" << total_gain;
+    DBG << "Total Improvement =" << total_gain;
     return true;
   }
 
