@@ -85,98 +85,112 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
                   const parallel::scalable_vector<HypernodeID>&,
                   kahypar::Metrics& best_metrics) override final {
 
-    utils::Randomize::instance().shuffleVector(_nodes, _nodes.size(), sched_getcpu());
-
     HyperedgeWeight total_gain = 0;
-    ClusterMoveScore c_score;
-    PriorityQueue pq(hypergraph.initialNumNodes());
-    parallel::scalable_vector<HypernodeWeight> cluster_weight(_context.partition.k, 0);
-    HypernodeWeight total_cluster_weight = 0;
-    for ( const HypernodeID& hn : _nodes ) {
-      const HypernodeID original_id = hypergraph.originalNodeID(hn);
-      if ( !_marked[original_id] ) {
-        ASSERT(c_score.cluster.size() == 0);
-        ASSERT(total_cluster_weight == 0);
-        ASSERT(std::accumulate(cluster_weight.begin(), cluster_weight.end(), 0) == 0);
-        ASSERT(std::accumulate(_tmp_scores.begin(), _tmp_scores.end(), 0) == 0);
+    for ( size_t it = 0; it < _context.refinement.cluster_label_propagation.max_iterations; ++it ) {
+      utils::Randomize::instance().shuffleVector(_nodes, _nodes.size(), sched_getcpu());
 
-        // Start cluster growing
-        pq.push(original_id, 0);
-        // We grow as long as there are vertices in the queue or the cluster
-        // reach the maximum allowed cluster size
-        while(!pq.empty() && c_score.cluster.size() < _context.refinement.cluster_label_propagation.max_cluster_size) {
-          const HypernodeID original_hn_id = pq.top();
-          const HypernodeID current_hn = hypergraph.globalNodeID(original_hn_id);
-          pq.pop();
+      ClusterMoveScore c_score;
+      PriorityQueue pq(hypergraph.initialNumNodes());
+      parallel::scalable_vector<HypernodeWeight> cluster_weight(_context.partition.k, 0);
+      HypernodeWeight total_cluster_weight = 0;
+      for ( const HypernodeID& hn : _nodes ) {
+        const HypernodeID original_id = hypergraph.originalNodeID(hn);
+        if ( !_marked[original_id] ) {
+          ASSERT(c_score.cluster.size() == 0);
+          ASSERT(total_cluster_weight == 0);
+          ASSERT(std::accumulate(cluster_weight.begin(), cluster_weight.end(), 0) == 0);
+          ASSERT(std::accumulate(_tmp_scores.begin(), _tmp_scores.end(), 0) == 0);
 
-          // Compute gain of cluster to all blocks of the partition, if we
-          // add the current vertex to cluster
-          updateGainOfCluster(hypergraph, current_hn);
+          // Start cluster growing
+          pq.push(original_id, 0);
+          // We grow as long as there are vertices in the queue or the cluster
+          // reach the maximum allowed cluster size
+          while(!pq.empty() && c_score.cluster.size() < _context.refinement.cluster_label_propagation.max_cluster_size) {
+            const HypernodeID original_hn_id = pq.top();
+            const HypernodeID current_hn = hypergraph.globalNodeID(original_hn_id);
+            pq.pop();
 
-          // Add vertex to cluster
-          c_score.cluster.push_back(current_hn);
-          _marked[original_hn_id] = true;
-          PartitionID from = hypergraph.partID(current_hn);
-          cluster_weight[from] += hypergraph.nodeWeight(current_hn);
-          total_cluster_weight += hypergraph.nodeWeight(current_hn);
+            // Compute gain of cluster to all blocks of the partition, if we
+            // add the current vertex to cluster
+            updateGainOfCluster(hypergraph, current_hn);
 
-          // Update cluster pin counts and insert all adjacent vertices into queue
-          for ( const HyperedgeID& he : hypergraph.incidentEdges(current_hn) ) {
-            const HyperedgeID original_he_id = hypergraph.originalEdgeID(he);
-            ++_cluster_pin_count_in_part[original_he_id][from];
-            ++_cluster_pins_in_he[original_he_id];
-            if ( !_in_queue_he[original_he_id] && hypergraph.edgeSize(he) < _context.partition.hyperedge_size_threshold ) {
-              for ( const HypernodeID& pin : hypergraph.pins(he) ) {
-                const HypernodeID original_pin_id = hypergraph.originalNodeID(pin);
-                const bool pq_contains_pin = pq.contains(original_pin_id);
-                if ( !pq_contains_pin &&
-                     !_marked[original_pin_id] &&
-                     hypergraph.isBorderNode(pin) ) {
-                  pq.push(original_pin_id, 1);
-                } else if ( pq_contains_pin ) {
-                  pq.updateKeyBy(original_pin_id, 1);
+            // Add vertex to cluster
+            c_score.cluster.push_back(current_hn);
+            _marked[original_hn_id] = true;
+            PartitionID from = hypergraph.partID(current_hn);
+            cluster_weight[from] += hypergraph.nodeWeight(current_hn);
+            total_cluster_weight += hypergraph.nodeWeight(current_hn);
+
+            // Update cluster pin counts and insert all adjacent vertices into queue
+            for ( const HyperedgeID& he : hypergraph.incidentEdges(current_hn) ) {
+              const HyperedgeID original_he_id = hypergraph.originalEdgeID(he);
+              ++_cluster_pin_count_in_part[original_he_id][from];
+              ++_cluster_pins_in_he[original_he_id];
+              if ( !_in_queue_he[original_he_id] && hypergraph.edgeSize(he) < _context.partition.hyperedge_size_threshold ) {
+                for ( const HypernodeID& pin : hypergraph.pins(he) ) {
+                  const HypernodeID original_pin_id = hypergraph.originalNodeID(pin);
+                  const bool pq_contains_pin = pq.contains(original_pin_id);
+                  if ( !pq_contains_pin &&
+                      !_marked[original_pin_id] &&
+                      hypergraph.isBorderNode(pin) ) {
+                    pq.push(original_pin_id, 1);
+                  } else if ( pq_contains_pin ) {
+                    pq.updateKeyBy(original_pin_id, 1);
+                  }
                 }
+                _in_queue_he.set(original_he_id, true);
               }
-              _in_queue_he.set(original_he_id, true);
+            }
+
+            // Check if moving the cluster to an other block has a better gain
+            // than the current best move under the restriction that the balance
+            // constraint is not violated.
+            for ( PartitionID to = 0; to < _context.partition.k; ++to ) {
+              if ( _tmp_scores[to] < c_score.best_gain &&
+                  hypergraph.partWeight(to) + total_cluster_weight - cluster_weight[to] <=
+                  _context.partition.max_part_weights[to] ) {
+                c_score.best_gain = _tmp_scores[to];
+                c_score.best_size = c_score.cluster.size();
+                c_score.best_block = to;
+              } else if ( _tmp_scores[to] == c_score.best_gain &&
+                  hypergraph.partWeight(to) + total_cluster_weight - cluster_weight[to] <=
+                  _context.partition.max_part_weights[to] &&
+                  hypergraph.partWeight(to) < _context.partition.perfect_balance_part_weights[to] ) {
+                c_score.best_gain = _tmp_scores[to];
+                c_score.best_size = c_score.cluster.size();
+                c_score.best_block = to;
+              }
             }
           }
 
-          // Check if moving the cluster to an other block has a better gain
-          // than the current best move under the restriction that the balance
-          // constraint is not violated.
-          for ( PartitionID to = 0; to < _context.partition.k; ++to ) {
-            if ( _tmp_scores[to] < c_score.best_gain &&
-                 hypergraph.partWeight(to) + total_cluster_weight - cluster_weight[to] <=
-                 _context.partition.max_part_weights[to] ) {
-              c_score.best_gain = _tmp_scores[to];
-              c_score.best_size = c_score.cluster.size();
-              c_score.best_block = to;
+          if ( c_score.best_block != kInvalidPartition ) {
+            // In case move of cluster increase objective, we
+            // apply the move
+            applyClusterMove(hypergraph, c_score);
+            total_gain += c_score.best_gain;
+          } else {
+            // Otherwise, we only reset cluster pin counts
+            for ( const HypernodeID& hn : c_score.cluster ) {
+              resetClusterPinCount(hypergraph, hn);
             }
           }
-        }
 
-        if ( c_score.best_block != kInvalidPartition ) {
-          // In case move of cluster increase objective, we
-          // apply the move
-          applyClusterMove(hypergraph, c_score);
-          total_gain += c_score.best_gain;
-        } else {
-          // Otherwise, we only reset cluster pin counts
-          for ( const HypernodeID& hn : c_score.cluster ) {
-            resetClusterPinCount(hypergraph, hn);
+          // Reset internal data structures
+          c_score.reset();
+          total_cluster_weight = 0;
+          for (PartitionID to = 0; to < _context.partition.k; ++to) {
+            _tmp_scores[to] = 0;
+            cluster_weight[to] = 0;
           }
+          _in_queue_he.reset();
+          pq.clear();
         }
-
-        // Reset internal data structures
-        c_score.reset();
-        total_cluster_weight = 0;
-        for (PartitionID to = 0; to < _context.partition.k; ++to) {
-          _tmp_scores[to] = 0;
-          cluster_weight[to] = 0;
-        }
-        _in_queue_he.reset();
-        pq.clear();
       }
+
+      for ( size_t i = 0; i < _marked.size(); ++i ) {
+        _marked[i] = false;
+      }
+      LOG << "Total Improvement #" << it << " =" << total_gain;
     }
 
     HyperedgeWeight current_metric = best_metrics.getMetric(
@@ -187,7 +201,7 @@ class ClusterLabelPropagationRefinerT final : public IRefinerT<TypeTraits> {
       metrics::objective(hypergraph, _context.partition.objective),
       V(best_metrics.getMetric(kahypar::Mode::direct_kway, _context.partition.objective)) <<
       V(metrics::objective(hypergraph, _context.partition.objective)));
-    DBG << "Total Improvement =" << total_gain;
+    LOG << "Total Improvement =" << total_gain;
     return true;
   }
 
