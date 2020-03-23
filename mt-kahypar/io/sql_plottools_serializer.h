@@ -97,6 +97,7 @@ static inline std::string serialize(const PartitionedHypergraph<>& hypergraph,
         << " cluster_lp_algorithm=" << context.refinement.cluster_label_propagation.algorithm
         << " cluster_lp_max_cluster_size=" << context.refinement.cluster_label_propagation.max_cluster_size
         << " cluster_lp_max_iterations=" << context.refinement.cluster_label_propagation.max_iterations
+        << " cluster_lp_rebalancing=" << std::boolalpha << context.refinement.cluster_label_propagation.rebalancing
         << " num_threads=" << context.shared_memory.num_threads
         << " shuffle_block_size=" << context.shared_memory.shuffle_block_size;
 

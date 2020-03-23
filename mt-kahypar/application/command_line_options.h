@@ -290,7 +290,11 @@ po::options_description createRefinementOptionsDescription(Context& context,
       ("r-cluster-lp-max-iterations",
       po::value<size_t>(&context.refinement.cluster_label_propagation.max_iterations)->value_name("<size_t>"),
       "Maximum number of iterations during cluster label propagation \n"
-      "(default: 1)");
+      "(default: 1)")
+      ("r-cluster-lp-rebalancing",
+      po::value<bool>(&context.refinement.cluster_label_propagation.rebalancing)->value_name("<bool>"),
+      "Moves are preferred to underloaded blocks \n"
+      "(default: true)");
   }
   return options;
 }

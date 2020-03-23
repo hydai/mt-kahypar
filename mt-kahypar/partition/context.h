@@ -192,6 +192,7 @@ struct ClusterLabelPropagationParameters {
   ClusterLabelPropagationAlgorithm algorithm = ClusterLabelPropagationAlgorithm::do_nothing;
   size_t max_cluster_size = 1;
   size_t max_iterations = 1;
+  bool rebalancing = true;
 };
 
 inline std::ostream & operator<< (std::ostream& str, const ClusterLabelPropagationParameters& params) {
@@ -199,6 +200,7 @@ inline std::ostream & operator<< (std::ostream& str, const ClusterLabelPropagati
   str << "    Algorithm:                        " << params.algorithm << std::endl;
   str << "    Maximum Cluster Size:             " << params.max_cluster_size << std::endl;
   str << "    Maximum Iterations:               " << params.max_iterations << std::endl;
+  str << "    Rebalancing:                      " << std::boolalpha << params.rebalancing << std::endl;
   return str;
 }
 
