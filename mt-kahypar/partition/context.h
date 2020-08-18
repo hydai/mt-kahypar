@@ -47,6 +47,8 @@ struct PartitioningParameters {
   HypernodeID large_hyperedge_size_threshold = std::numeric_limits<HypernodeID>::max();
   HypernodeID ignore_hyperedge_size_threshold = std::numeric_limits<HypernodeID>::max();
 
+  std::string kahypar_context = "UNDEFINED";
+
   bool verbose_output = true;
   bool show_detailed_timings = false;
   bool show_detailed_clustering_timings = false;
@@ -81,6 +83,7 @@ inline std::ostream & operator<< (std::ostream& str, const PartitioningParameter
   str << "  Number of V-Cycles:                 " << params.num_vcycles << std::endl;
   str << "  Ignore HE Size Threshold:           " << params.ignore_hyperedge_size_threshold << std::endl;
   str << "  Large HE Size Threshold:            " << params.large_hyperedge_size_threshold << std::endl;
+  str << "  KaHyPar Context:                    " << params.kahypar_context << std::endl;
   return str;
 }
 
@@ -103,13 +106,15 @@ inline std::ostream & operator<< (std::ostream& str, const CommunityDetectionPar
 struct PreprocessingParameters {
   bool stable_construction_of_incident_edges = false;
   bool use_community_detection = false;
+  bool use_kahypar_community_detection = false;
   CommunityDetectionParameters community_detection = { };
 };
 
 inline std::ostream & operator<< (std::ostream& str, const PreprocessingParameters& params) {
   str << "Preprocessing Parameters:" << std::endl;
   str << "  Use Community Detection:            " << std::boolalpha << params.use_community_detection << std::endl;
-  if (params.use_community_detection) {
+  str << "  Use KaHyPar Community Detection:    " << std::boolalpha << params.use_kahypar_community_detection << std::endl;
+  if (params.use_community_detection && !params.use_kahypar_community_detection) {
     str << std::endl << params.community_detection;
   }
   return str;
@@ -277,7 +282,6 @@ inline std::ostream & operator<< (std::ostream& str, const SparsificationParamet
 struct InitialPartitioningParameters {
   InitialPartitioningMode mode = InitialPartitioningMode::UNDEFINED;
   std::string kahypar_binary = "UNDEFINED";
-  std::string kahypar_context = "UNDEFINED";
   bool kahypar_quiet_mode = true;
   RefinementParameters refinement = { };
   size_t runs = 1;
@@ -300,7 +304,6 @@ inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningPa
     str << params.refinement << std::endl;
   } else {
     str << "  KaHyPar Binary:                     " << params.kahypar_binary << std::endl;
-    str << "  KaHyPar Context:                    " << params.kahypar_context << std::endl;
     str << "  KaHyPar Quiet Mode:                 " << std::boolalpha << params.kahypar_quiet_mode << std::endl;
   }
   return str;

@@ -33,7 +33,10 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+#include "kahypar/definitions.h"
+
 #include "tbb/parallel_for.h"
+#include "tbb/parallel_invoke.h"
 
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/context_enum_classes.h"
@@ -408,6 +411,60 @@ static inline void writeHypergraphFile(const HyperGraph& hypergraph, const std::
 
   writeHypernodeWeights(out_stream, hypergraph);
   out_stream.close();
+}
+
+template<typename HyperGraph>
+static inline std::pair<kahypar::Hypergraph, parallel::scalable_vector<HypernodeID>> convertToKaHyParHypergraph(const HyperGraph& hypergraph,
+                                                                                                                const kahypar::PartitionID k) {
+  HypernodeID num_hypernodes = 0;
+  HypernodeID num_hyperedges = 0;
+  HypernodeID num_pins = 0;
+  parallel::scalable_vector<HypernodeID> node_mapping(hypergraph.initialNumNodes(), kInvalidHypernode);
+  parallel::scalable_vector<HyperedgeID> edge_mapping(hypergraph.initialNumEdges(), kInvalidHyperedge);
+  tbb::parallel_invoke([&] {
+    for ( const HypernodeID& hn : hypergraph.nodes() ) {
+      node_mapping[hn] = num_hypernodes++;
+    }
+  }, [&] {
+    for ( const HyperedgeID& he : hypergraph.edges() ) {
+      edge_mapping[he] = num_hyperedges++;
+      num_pins += hypergraph.edgeSize(he);
+    }
+  });
+
+  std::vector<size_t> index_vector;
+  std::vector<kahypar::HypernodeID> edge_vector;
+  std::vector<kahypar::HyperedgeWeight> hyperedge_weights;
+  std::vector<kahypar::HypernodeWeight> hypernode_weights;
+  tbb::parallel_invoke([&] {
+    tbb::parallel_invoke([&] {
+      index_vector.assign(num_hyperedges + 1, 0);
+    }, [&] {
+      edge_vector.resize(num_pins);
+    });
+    index_vector[num_hyperedges] = num_pins;
+    size_t current_pin_idx = 0;
+    for ( const HyperedgeID& he : hypergraph.edges() ) {
+      index_vector[edge_mapping[he]] = current_pin_idx;
+      for ( const HypernodeID& pin : hypergraph.pins(he) ) {
+        edge_vector[current_pin_idx++] = node_mapping[pin];
+      }
+    }
+  }, [&] {
+    hyperedge_weights.resize(num_hyperedges);
+    hypergraph.doParallelForAllEdges([&](const HyperedgeID he) {
+      hyperedge_weights[edge_mapping[he]] = hypergraph.edgeWeight(he);
+    });
+  }, [&] {
+    hypernode_weights.resize(num_hypernodes);
+    hypergraph.doParallelForAllNodes([&](const HypernodeID hn) {
+      hypernode_weights[node_mapping[hn]] = hypergraph.nodeWeight(hn);
+    });
+  });
+
+  kahypar::Hypergraph kahypar_hypergraph(num_hypernodes, num_hyperedges,
+    index_vector, edge_vector, k, hyperedge_weights, hypernode_weights);
+  return std::make_pair(std::move(kahypar_hypergraph), std::move(node_mapping));
 }
 
 }  // namespace io

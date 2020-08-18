@@ -35,6 +35,7 @@
 #include "mt-kahypar/partition/preprocessing/sparsification/degree_zero_hn_remover.h"
 #include "mt-kahypar/partition/preprocessing/sparsification/large_he_remover.h"
 #include "mt-kahypar/partition/preprocessing/community_detection/parallel_louvain.h"
+#include "mt-kahypar/partition/preprocessing/community_detection/kahypar_louvain.h"
 #include "mt-kahypar/utils/stats.h"
 
 namespace mt_kahypar {
@@ -132,11 +133,15 @@ inline void Partitioner::preprocess(Hypergraph& hypergraph) {
     utils::Timer::instance().start_timer("community_detection", "Community Detection");
     utils::Timer::instance().start_timer("perform_community_detection", "Perform Community Detection");
     ds::Clustering communities(0);
-    utils::Timer::instance().start_timer("construct_graph", "Construct Graph");
-    Graph graph(hypergraph, _context.preprocessing.community_detection.edge_weight_function);
-    utils::Timer::instance().stop_timer("construct_graph");
-    communities = ParallelModularityLouvain<Graph>::run(graph, _context,
-      _context.shared_memory.num_threads);
+    if ( _context.preprocessing.use_kahypar_community_detection ) {
+      communities = KaHyParLouvain::run(hypergraph, _context);
+    } else {
+      utils::Timer::instance().start_timer("construct_graph", "Construct Graph");
+      Graph graph(hypergraph, _context.preprocessing.community_detection.edge_weight_function);
+      utils::Timer::instance().stop_timer("construct_graph");
+      communities = ParallelModularityLouvain<Graph>::run(graph, _context,
+        _context.shared_memory.num_threads);
+    }
     utils::Timer::instance().stop_timer("perform_community_detection");
 
     // Stream community ids into hypergraph

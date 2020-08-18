@@ -92,7 +92,10 @@ po::options_description createGeneralOptionsDescription(Context& context, const 
     ("csv", po::value<bool>(&context.partition.csv_output)->value_name("<bool>")->default_value(false),
     "Summarize results in CSV format")
     ("algorithm-name", po::value<std::string>(&context.algorithm_name)->value_name("<std::string>")->default_value("MT-KaHyPar"),
-    "An algorithm name to print into the summarized output (csv or sqlplottools). ");
+    "An algorithm name to print into the summarized output (csv or sqlplottools). ")
+    ("kahypar-context",
+    po::value<std::string>(&context.partition.kahypar_context)->value_name("<string>"),
+    "KaHyPar Context File");
   return options;
 }
 
@@ -106,6 +109,9 @@ po::options_description createPreprocessingOptionsDescription(Context& context, 
     ("p-enable-community-detection",
     po::value<bool>(&context.preprocessing.use_community_detection)->value_name("<bool>")->default_value(true),
     "If true, community detection is used as preprocessing step to restrict contractions to densly coupled regioins in coarsening phase")
+    ("p-enable-kahypar-community-detection",
+    po::value<bool>(&context.preprocessing.use_kahypar_community_detection)->value_name("<bool>")->default_value(false),
+    "If true, community detection of KaHyPar is used to restrict contractions to densly coupled regions in coarsening")
     ("p-louvain-edge-weight-function",
     po::value<std::string>()->value_name("<string>")->notifier(
       [&](const std::string& type) {
@@ -317,9 +323,6 @@ po::options_description createInitialPartitioningOptionsDescription(Context& con
     ("i-kahypar-binary",
     po::value<std::string>(&context.initial_partitioning.kahypar_binary)->value_name("<string>"),
     "KaHyPar Binary File")
-    ("i-kahypar-context",
-    po::value<std::string>(&context.initial_partitioning.kahypar_context)->value_name("<string>"),
-    "KaHyPar Context File")
     ("i-kahypar-quiet-mode",
     po::value<bool>(&context.initial_partitioning.kahypar_quiet_mode)->value_name("<bool>")->default_value(true),
     "KaHyPar Quiet Mode")

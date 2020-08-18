@@ -58,7 +58,7 @@ class KaHyParInitialPartitioner {
       "-e " + epsilon_str + " " +
       "-o km1" + " " +
       "-m direct" + " " +
-      "-p " + _context.initial_partitioning.kahypar_context + " " +
+      "-p " + _context.partition.kahypar_context + " " +
       "--seed=" + std::to_string(_context.partition.seed) + " " +
       "--write-partition=true " +
       "--quiet=" + std::to_string(_context.initial_partitioning.kahypar_quiet_mode);

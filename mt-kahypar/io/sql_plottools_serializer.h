@@ -59,6 +59,7 @@ static inline std::string serialize(const PartitionedHypergraph& hypergraph,
         << " time_limit=" << context.partition.time_limit
         << " perfect_balance_part_weight=" << context.partition.perfect_balance_part_weights[0]
         << " max_part_weight=" << context.partition.max_part_weights[0]
+        << " kahypar_context=" << context.partition.kahypar_context
         << " total_graph_weight=" << hypergraph.totalWeight()
         << " use_community_detection=" << std::boolalpha << context.preprocessing.use_community_detection
         << " community_edge_weight_function=" << context.preprocessing.community_detection.edge_weight_function
@@ -82,7 +83,6 @@ static inline std::string serialize(const PartitionedHypergraph& hypergraph,
         << " rating_acceptance_policy=" << context.coarsening.rating.acceptance_policy
         << " initial_partitioning_mode=" << context.initial_partitioning.mode
         << " initial_partitioning_kahypar_binary=" << context.initial_partitioning.kahypar_binary
-        << " initial_partitioning_kahypar_context=" << context.initial_partitioning.kahypar_context
         << " initial_partitioning_kahypar_quiet_mode=" << std::boolalpha << context.initial_partitioning.kahypar_quiet_mode
         << " initial_partitioning_runs=" << context.initial_partitioning.runs
         << " initial_partitioning_use_adaptive_epsilon=" << std::boolalpha << context.initial_partitioning.use_adaptive_epsilon
