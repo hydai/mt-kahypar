@@ -28,6 +28,7 @@
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/factories.h"
 #include "mt-kahypar/partition/initial_partitioning/flat/pool_initial_partitioner.h"
+#include "mt-kahypar/partition/initial_partitioning/flat/kahypar_initial_partitioner.h"
 #include "mt-kahypar/parallel/memory_pool.h"
 #include "mt-kahypar/utils/initial_partitioning_stats.h"
 #include "mt-kahypar/utils/profiler.h"
@@ -89,7 +90,8 @@ class RefinementTask : public tbb::task {
       _coarsener->coarsestPartitionedHypergraph();
     io::printPartitioningResults(coarsest_partitioned_hypergraph,
       _context, "Initial Partitioning Results:");
-    if ( _context.partition.verbose_output ) {
+    if ( _context.partition.verbose_output &&
+         _context.initial_partitioning.mode != InitialPartitioningMode::kahypar ) {
       utils::InitialPartitioningStats::instance().printInitialPartitioningStats();
     }
 
@@ -222,6 +224,11 @@ class CoarseningTask : public tbb::task {
           PoolInitialPartitionerContinuation(
             phg, _ip_context, _task_group_id);
         spawn_initial_partitioner(ip_continuation);
+      } else if ( _context.initial_partitioning.mode == InitialPartitioningMode::kahypar ) {
+        disableTimerAndStats();
+        KaHyParInitialPartitioner kahypar_ip(phg, _ip_context);
+        kahypar_ip.initial_partition();
+        phg.initializePartition(_task_group_id);
       } else {
         std::unique_ptr<IInitialPartitioner> initial_partitioner =
           InitialPartitionerFactory::getInstance().createObject(

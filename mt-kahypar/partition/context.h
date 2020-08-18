@@ -276,6 +276,9 @@ inline std::ostream & operator<< (std::ostream& str, const SparsificationParamet
 
 struct InitialPartitioningParameters {
   InitialPartitioningMode mode = InitialPartitioningMode::UNDEFINED;
+  std::string kahypar_binary = "UNDEFINED";
+  std::string kahypar_context = "UNDEFINED";
+  bool kahypar_quiet_mode = true;
   RefinementParameters refinement = { };
   size_t runs = 1;
   bool use_adaptive_epsilon = false;
@@ -287,13 +290,19 @@ struct InitialPartitioningParameters {
 inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningParameters& params) {
   str << "Initial Partitioning Parameters:" << std::endl;
   str << "  Initial Partitioning Mode:          " << params.mode << std::endl;
-  str << "  Number of Runs:                     " << params.runs << std::endl;
-  str << "  Use Adaptive Epsilon:               " << std::boolalpha << params.use_adaptive_epsilon << std::endl;
-  str << "  Perform FM Refinement:              " << std::boolalpha << params.perform_fm_refinement << std::endl;
-  str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
-  str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
-  str << "\nInitial Partitioning ";
-  str << params.refinement << std::endl;
+  if ( params.mode != InitialPartitioningMode::kahypar ) {
+    str << "  Number of Runs:                     " << params.runs << std::endl;
+    str << "  Use Adaptive Epsilon:               " << std::boolalpha << params.use_adaptive_epsilon << std::endl;
+    str << "  Perform FM Refinement:              " << std::boolalpha << params.perform_fm_refinement << std::endl;
+    str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
+    str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
+    str << "\nInitial Partitioning ";
+    str << params.refinement << std::endl;
+  } else {
+    str << "  KaHyPar Binary:                     " << params.kahypar_binary << std::endl;
+    str << "  KaHyPar Context:                    " << params.kahypar_context << std::endl;
+    str << "  KaHyPar Quiet Mode:                 " << std::boolalpha << params.kahypar_quiet_mode << std::endl;
+  }
   return str;
 }
 

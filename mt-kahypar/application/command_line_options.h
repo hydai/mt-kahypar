@@ -314,6 +314,15 @@ po::options_description createInitialPartitioningOptionsDescription(Context& con
     "- direct\n"
     "- recursive\n"
     "- recursive_bisection")
+    ("i-kahypar-binary",
+    po::value<std::string>(&context.initial_partitioning.kahypar_binary)->value_name("<string>"),
+    "KaHyPar Binary File")
+    ("i-kahypar-context",
+    po::value<std::string>(&context.initial_partitioning.kahypar_context)->value_name("<string>"),
+    "KaHyPar Context File")
+    ("i-kahypar-quiet-mode",
+    po::value<bool>(&context.initial_partitioning.kahypar_quiet_mode)->value_name("<bool>")->default_value(true),
+    "KaHyPar Quiet Mode")
     ("i-runs",
     po::value<size_t>(&context.initial_partitioning.runs)->value_name("<size_t>")->default_value(20),
     "Number of runs for each bisection algorithm.")

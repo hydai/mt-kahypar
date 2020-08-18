@@ -376,5 +376,39 @@ static inline void writePartitionFile(const HyperGraph& hypergraph, const std::s
     out_stream.close();
   }
 }
+
+template<typename HyperGraph>
+static inline void writeHypernodeWeights(std::ofstream& out_stream, const HyperGraph& hypergraph) {
+  for (const HypernodeID& hn : hypergraph.nodes()) {
+    out_stream << hypergraph.nodeWeight(hn) << std::endl;
+  }
+}
+
+template<typename HyperGraph>
+static inline void writeHGRHeader(std::ofstream& out_stream, const HyperGraph& hypergraph) {
+  out_stream << hypergraph.initialNumEdges() << " "
+             << hypergraph.initialNumNodes()
+             << " 11" /* Edge and Node Weights */ << std::endl;
+}
+
+template<typename HyperGraph>
+static inline void writeHypergraphFile(const HyperGraph& hypergraph, const std::string& filename) {
+  ASSERT(!filename.empty(), "No filename for hypergraph file specified");
+
+  std::ofstream out_stream(filename.c_str());
+  writeHGRHeader(out_stream, hypergraph);
+
+  for (const HyperedgeID& he : hypergraph.edges()) {
+    out_stream << hypergraph.edgeWeight(he) << " ";
+    for (const HypernodeID& pin : hypergraph.pins(he)) {
+      out_stream << pin + 1 << " ";
+    }
+    out_stream << std::endl;
+  }
+
+  writeHypernodeWeights(out_stream, hypergraph);
+  out_stream.close();
+}
+
 }  // namespace io
 }  // namespace mt_kahypar

@@ -96,6 +96,7 @@ enum class InitialPartitioningMode : uint8_t {
   direct,
   recursive,
   recursive_bisection,
+  kahypar,
   UNDEFINED
 };
 
@@ -216,6 +217,7 @@ std::ostream & operator<< (std::ostream& os, const InitialPartitioningMode& mode
     case InitialPartitioningMode::direct: return os << "direct";
     case InitialPartitioningMode::recursive: return os << "recursive";
     case InitialPartitioningMode::recursive_bisection: return os << "recursive_bisection";
+    case InitialPartitioningMode::kahypar: return os << "kahypar";
     case InitialPartitioningMode::UNDEFINED: return os << "UNDEFINED";
       // omit default case to trigger compiler warning for missing cases
   }
@@ -341,6 +343,8 @@ static InitialPartitioningMode initialPartitioningModeFromString(const std::stri
     return InitialPartitioningMode::recursive;
   } else if (mode == "recursive_bisection") {
     return InitialPartitioningMode::recursive_bisection;
+  } else if (mode == "kahypar") {
+    return InitialPartitioningMode::kahypar;
   }
   ERROR("Illegal option: " + mode);
   return InitialPartitioningMode::UNDEFINED;

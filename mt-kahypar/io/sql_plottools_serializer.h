@@ -81,6 +81,9 @@ static inline std::string serialize(const PartitionedHypergraph& hypergraph,
         << " rating_heavy_node_penalty_policy=" << context.coarsening.rating.heavy_node_penalty_policy
         << " rating_acceptance_policy=" << context.coarsening.rating.acceptance_policy
         << " initial_partitioning_mode=" << context.initial_partitioning.mode
+        << " initial_partitioning_kahypar_binary=" << context.initial_partitioning.kahypar_binary
+        << " initial_partitioning_kahypar_context=" << context.initial_partitioning.kahypar_context
+        << " initial_partitioning_kahypar_quiet_mode=" << std::boolalpha << context.initial_partitioning.kahypar_quiet_mode
         << " initial_partitioning_runs=" << context.initial_partitioning.runs
         << " initial_partitioning_use_adaptive_epsilon=" << std::boolalpha << context.initial_partitioning.use_adaptive_epsilon
         << " initial_partitioning_perform_fm_refinement=" << std::boolalpha << context.initial_partitioning.perform_fm_refinement
