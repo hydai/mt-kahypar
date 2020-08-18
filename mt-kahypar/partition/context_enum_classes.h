@@ -57,6 +57,7 @@ enum class SimiliarNetCombinerStrategy : uint8_t {
 enum class CoarseningAlgorithm : uint8_t {
   multilevel_coarsener,
   nlevel_coarsener,
+  kahypar_coarsener,
   UNDEFINED
 };
 
@@ -159,6 +160,7 @@ std::ostream & operator<< (std::ostream& os, const CoarseningAlgorithm& algo) {
   switch (algo) {
     case CoarseningAlgorithm::multilevel_coarsener: return os << "multilevel_coarsener";
     case CoarseningAlgorithm::nlevel_coarsener: return os << "nlevel_coarsener";
+    case CoarseningAlgorithm::kahypar_coarsener: return os << "kahypar_coarsener";
     case CoarseningAlgorithm::UNDEFINED: return os << "UNDEFINED";
       // omit default case to trigger compiler warning for missing cases
   }
@@ -275,6 +277,8 @@ static CoarseningAlgorithm coarseningAlgorithmFromString(const std::string& type
     return CoarseningAlgorithm::multilevel_coarsener;
   } else if (type == "nlevel_coarsener") {
     return CoarseningAlgorithm::nlevel_coarsener;
+  } else if (type == "kahypar_coarsener") {
+    return CoarseningAlgorithm::kahypar_coarsener;
   }
   ERROR("Illegal option: " + type);
   return CoarseningAlgorithm::UNDEFINED;

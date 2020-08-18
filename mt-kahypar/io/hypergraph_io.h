@@ -414,7 +414,8 @@ static inline void writeHypergraphFile(const HyperGraph& hypergraph, const std::
 }
 
 template<typename HyperGraph>
-static inline std::pair<kahypar::Hypergraph, parallel::scalable_vector<HypernodeID>> convertToKaHyParHypergraph(const HyperGraph& hypergraph,
+static inline std::pair<std::unique_ptr<kahypar::Hypergraph>,
+                        parallel::scalable_vector<HypernodeID>> convertToKaHyParHypergraph(const HyperGraph& hypergraph,
                                                                                                                 const kahypar::PartitionID k) {
   HypernodeID num_hypernodes = 0;
   HypernodeID num_hyperedges = 0;
@@ -462,9 +463,9 @@ static inline std::pair<kahypar::Hypergraph, parallel::scalable_vector<Hypernode
     });
   });
 
-  kahypar::Hypergraph kahypar_hypergraph(num_hypernodes, num_hyperedges,
-    index_vector, edge_vector, k, hyperedge_weights, hypernode_weights);
-  return std::make_pair(std::move(kahypar_hypergraph), std::move(node_mapping));
+  return std::make_pair(std::make_unique<kahypar::Hypergraph>(
+    num_hypernodes, num_hyperedges, index_vector, edge_vector,
+    k, hyperedge_weights, hypernode_weights), std::move(node_mapping));
 }
 
 }  // namespace io

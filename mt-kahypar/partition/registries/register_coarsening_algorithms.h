@@ -36,6 +36,13 @@
       );                                                                                                        \
   })
 
+#define REGISTER_COARSENER(id, coarsener)                                                                                       \
+  static kahypar::meta::Registrar<CoarsenerFactory> JOIN(register_ ## refiner, t)(                                              \
+    id,                                                                                                                         \
+    [](Hypergraph& hypergraph, const Context& context, const TaskGroupID task_group_id, const bool top_level) -> ICoarsener* {  \
+    return new coarsener(hypergraph, context, task_group_id, top_level);                                                        \
+  })
+
 namespace mt_kahypar {
 REGISTER_DISPATCHED_COARSENER(CoarseningAlgorithm::multilevel_coarsener,
                               MultilevelCoarsenerDispatcher,
@@ -53,4 +60,5 @@ REGISTER_DISPATCHED_COARSENER(CoarseningAlgorithm::nlevel_coarsener,
                                 context.coarsening.rating.heavy_node_penalty_policy),
                               kahypar::meta::PolicyRegistry<AcceptancePolicy>::getInstance().getPolicy(
                                 context.coarsening.rating.acceptance_policy));
+REGISTER_COARSENER(CoarseningAlgorithm::kahypar_coarsener, KaHyParCoarsener);
 }  // namespace mt_kahypar

@@ -26,6 +26,7 @@
 #include "kahypar/meta/static_multi_dispatch_factory.h"
 #include "kahypar/meta/typelist.h"
 
+#include "mt-kahypar/partition/coarsening/kahypar_coarsener.h"
 #include "mt-kahypar/partition/coarsening/nlevel_coarsener.h"
 #include "mt-kahypar/partition/coarsening/multilevel_coarsener.h"
 #include "mt-kahypar/partition/coarsening/i_coarsener.h"

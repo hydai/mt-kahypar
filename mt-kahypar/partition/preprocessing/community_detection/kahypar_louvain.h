@@ -39,17 +39,17 @@ class KaHyParLouvain {
   static ds::Clustering run(const Hypergraph& hypergraph, const Context& context) {
     // Load KaHyPar Context and Hypergraph
     auto converted_kahypar_hypergraph = io::convertToKaHyParHypergraph(hypergraph, 2);
-    kahypar::Hypergraph kahypar_hypergraph = std::move(converted_kahypar_hypergraph.first);
+    std::unique_ptr<kahypar::Hypergraph> kahypar_hypergraph = std::move(converted_kahypar_hypergraph.first);
     parallel::scalable_vector<HypernodeID> node_mapping = std::move(converted_kahypar_hypergraph.second);
     kahypar::Context kahypar_context = setupKaHyParContext(
-      kahypar_hypergraph, context.partition.kahypar_context);
+      *kahypar_hypergraph, context.partition.kahypar_context);
 
     // Perform KaHyPar Louvain Community Detection
-    kahypar::detectCommunities(kahypar_hypergraph, kahypar_context);
+    kahypar::detectCommunities(*kahypar_hypergraph, kahypar_context);
 
     // Store Communities
     ds::Clustering clustering(hypergraph.initialNumNodes());
-    auto& communities = kahypar_hypergraph.communities();
+    auto& communities = kahypar_hypergraph->communities();
     hypergraph.doParallelForAllNodes([&](const HypernodeID hn) {
       clustering[hn] = communities[node_mapping[hn]];
     });
