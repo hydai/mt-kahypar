@@ -273,13 +273,13 @@ class NLevelCoarsenerBase {
 
 
     const bool is_kahypar_initialized = _kahypar_hg != nullptr;
-    std::vector<KaHyParMemento> mementos;
+    std::vector<KaHyParMemento> tmp_mementos;
     if ( !is_kahypar_initialized ) {
       // Create KaHyPar n-Level Hierarchy
       for ( const BatchVector& batches : _hierarchy ) {
         for ( const Batch& batch : batches ) {
           for ( const Memento& memento : batch ) {
-            mementos.push_back(KaHyParMemento { memento.u, memento.v });
+            tmp_mementos.push_back(KaHyParMemento { memento.u, memento.v });
           }
         }
       }
@@ -303,13 +303,18 @@ class NLevelCoarsenerBase {
       });
       initializeCommunities(_kahypar_hg, _to_kahypar_hg);
 
+      // Map mementos to KaHyPar Hypergraph
+      std::vector<KaHyParMemento> mementos;
+      for ( const KaHyParMemento& memento : tmp_mementos ) {
+        mementos.push_back(KaHyParMemento { _to_kahypar_hg[memento.u], _to_kahypar_hg[memento.v] });
+      }
+
       // Simulate KaHyPar n-Level Hierarchy
       if (_context.partition.verbose_output && _context.partition.enable_progress_bar) {
         LOG << "Simulate n-Level Hierarchy on KaHyPar Hypergraph:";
       }
       utils::ProgressBar kahypar_contraction_progress(_kahypar_hg->initialNumNodes(), 0,
         _context.partition.verbose_output && _context.partition.enable_progress_bar && !debug);
-      kahypar_contraction_progress += _kahypar_hg->currentNumNodes();
       _kahypar_coarsener = std::make_unique<InternalKaHyParCoarsener>(
         *_kahypar_hg, _kahypar_context, _kahypar_hg->weightOfHeaviestNode(),
         [&](const HypernodeID, const HypernodeID) {
