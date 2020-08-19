@@ -24,14 +24,9 @@
 
 #include "tbb/parallel_for.h"
 
-#include "kahypar/partition/context.h"
-#include "kahypar/application/command_line_options.h"
-#include "kahypar/partition/coarsening/ml_coarsener.h"
-
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/coarsening/nlevel_coarsener_base.h"
 #include "mt-kahypar/partition/coarsening/i_coarsener.h"
-#include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/utils/progress_bar.h"
 #include "mt-kahypar/utils/timer.h"
 
@@ -42,17 +37,7 @@ class KaHyParCoarsener : public ICoarsener,
  private:
 
   using Base = NLevelCoarsenerBase;
-  using ContractionFunc = std::function<void (const HypernodeID, const HypernodeID)>;
-  using EndOfPassFunc = std::function<void ()>;
-  using InternalKaHyParCoarsener = kahypar::MLCoarsener<kahypar::HeavyEdgeScore,
-                                                        kahypar::NoWeightPenalty,
-                                                        kahypar::UseCommunityStructure,
-                                                        kahypar::NormalPartitionPolicy,
-                                                        kahypar::BestRatingPreferringUnmatched<>,
-                                                        kahypar::AllowFreeOnFixedFreeOnFreeFixedOnFixed,
-                                                        kahypar::RatingType,
-                                                        ContractionFunc,
-                                                        EndOfPassFunc>;
+  using InternalKaHyParCoarsener = typename Base::InternalKaHyParCoarsener;
 
   static constexpr bool debug = false;
   static constexpr bool enable_heavy_assert = false;
@@ -63,9 +48,6 @@ class KaHyParCoarsener : public ICoarsener,
                   const TaskGroupID task_group_id,
                   const bool top_level) :
     Base(hypergraph, context, task_group_id, top_level),
-    kahypar_hg(nullptr),
-    to_kahypar_hg(),
-    to_mt_kahypar_hg(),
     _progress_bar(hypergraph.initialNumNodes(), 0, false) {
     _progress_bar += hypergraph.numRemovedHypernodes();
   }
@@ -85,29 +67,29 @@ class KaHyParCoarsener : public ICoarsener,
 
     utils::Timer::instance().start_timer("initialize_kahypar_hypergraph", "Initialize KaHyPar Hypergraph");
     auto converted_kahypar_hypergraph = io::convertToKaHyParHypergraph(_hg, _context.partition.k);
-    kahypar_hg = std::move(converted_kahypar_hypergraph.first);
-    to_kahypar_hg = std::move(converted_kahypar_hypergraph.second);
-    to_mt_kahypar_hg.assign(kahypar_hg->initialNumNodes(), 0);
+    _kahypar_hg = std::move(converted_kahypar_hypergraph.first);
+    _to_kahypar_hg = std::move(converted_kahypar_hypergraph.second);
+    _to_mt_kahypar_hg.assign(_kahypar_hg->initialNumNodes(), 0);
     _hg.doParallelForAllNodes([&](const HypernodeID hn) {
-      const HypernodeID kahypar_hn = to_kahypar_hg[hn];
-      to_mt_kahypar_hg[kahypar_hn] = hn;
+      const HypernodeID kahypar_hn = _to_kahypar_hg[hn];
+      _to_mt_kahypar_hg[kahypar_hn] = hn;
     });
-    kahypar::Context kahypar_context = setupKaHyParContext(_context.partition.kahypar_context);
-    initializeCommunities();
+    Base::initializeCommunities(_kahypar_hg, _to_kahypar_hg);
     utils::Timer::instance().stop_timer("initialize_kahypar_hypergraph");
 
     utils::Timer::instance().start_timer("interleaved_kahypar_coarsening", "Interleaved (Mt-)KaHyPar Coarsening");
-    InternalKaHyParCoarsener kahypar_coarsener(*kahypar_hg, kahypar_context, kahypar_hg->weightOfHeaviestNode(),
+    _kahypar_coarsener = std::make_unique<InternalKaHyParCoarsener>(
+      *_kahypar_hg, _kahypar_context, _kahypar_hg->weightOfHeaviestNode(),
       [&](const HypernodeID kahypar_u, const HypernodeID kahypar_v) {
-        const HypernodeID u = to_mt_kahypar_hg[kahypar_u];
-        const HypernodeID v = to_mt_kahypar_hg[kahypar_v];
+        const HypernodeID u = _to_mt_kahypar_hg[kahypar_u];
+        const HypernodeID v = _to_mt_kahypar_hg[kahypar_v];
         _hg.registerContraction(u, v);
         _hg.contract(v);
         _progress_bar += 1;
       }, [&]() {
         Base::removeSinglePinAndParallelNets();
-      });
-    kahypar_coarsener.coarsen(kahypar_context.coarsening.contraction_limit);
+      }, [&](const kahypar::Metrics&) { });
+    _kahypar_coarsener->coarsen(_kahypar_context.coarsening.contraction_limit);
     utils::Timer::instance().stop_timer("interleaved_kahypar_coarsening");
 
     const HypernodeID initial_num_nodes = _hg.initialNumNodes() - _hg.numRemovedHypernodes();
@@ -126,40 +108,20 @@ class KaHyParCoarsener : public ICoarsener,
 
   PartitionedHypergraph&& uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
                                         std::unique_ptr<IRefiner>& fm) override {
-    return Base::doUncoarsen(label_propagation, fm);
-  }
-
-  kahypar::Context setupKaHyParContext(const std::string& kahypar_ini) {
-    ASSERT(kahypar_hg);
-    kahypar::Context kahypar_context;
-    kahypar::parseIniToContext(kahypar_context, kahypar_ini);
-
-    kahypar_context.partition.k = _context.partition.k;
-    kahypar_context.partition.epsilon = _context.partition.epsilon;
-    kahypar_context.partition.mode = _context.partition.mode;
-    kahypar_context.partition.objective = _context.partition.objective;
-    kahypar_context.partition.perfect_balance_part_weights = _context.partition.perfect_balance_part_weights;
-    kahypar_context.partition.max_part_weights = _context.partition.max_part_weights;
-    kahypar_context.coarsening.contraction_limit = _context.coarsening.contraction_limit;
-    kahypar_context.coarsening.max_allowed_node_weight = _context.coarsening.max_allowed_node_weight;
-
-    return kahypar_context;
-  }
-
-  void initializeCommunities() {
-    ASSERT(kahypar_hg);
-    std::vector<kahypar::PartitionID> communities(kahypar_hg->initialNumNodes());
-    _hg.doParallelForAllNodes([&](const HypernodeID hn) {
-      communities[to_kahypar_hg[hn]] = _hg.communityID(hn);
-    });
-    kahypar_hg->setCommunities(std::move(communities));
+    if ( _context.refinement.use_kahypar_refinement ) {
+      return Base::doKaHyParUncoarsen();
+    } else {
+      return Base::doUncoarsen(label_propagation, fm);
+    }
   }
 
   using Base::_hg;
   using Base::_context;
-  std::unique_ptr<kahypar::Hypergraph> kahypar_hg;
-  parallel::scalable_vector<HypernodeID> to_kahypar_hg;
-  parallel::scalable_vector<HypernodeID> to_mt_kahypar_hg;
+  using Base::_kahypar_hg;
+  using Base::_kahypar_context;
+  using Base::_kahypar_coarsener;
+  using Base::_to_kahypar_hg;
+  using Base::_to_mt_kahypar_hg;
   utils::ProgressBar _progress_bar;
 };
 

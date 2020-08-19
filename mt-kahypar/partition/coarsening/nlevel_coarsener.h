@@ -168,7 +168,11 @@ class NLevelCoarsener : public ICoarsener,
 
   PartitionedHypergraph&& uncoarsenImpl(std::unique_ptr<IRefiner>& label_propagation,
                                         std::unique_ptr<IRefiner>& fm) override {
-    return Base::doUncoarsen(label_propagation, fm);
+    if ( _context.refinement.use_kahypar_refinement ) {
+      return Base::doKaHyParUncoarsen();
+    } else {
+      return Base::doUncoarsen(label_propagation, fm);
+    }
   }
 
   using Base::_hg;

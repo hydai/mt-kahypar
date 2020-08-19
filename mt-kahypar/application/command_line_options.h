@@ -217,6 +217,10 @@ po::options_description createRefinementOptionsDescription(Context& context,
     po::value<bool>((!initial_partitioning ? &context.refinement.refine_until_no_improvement :
       &context.initial_partitioning.refinement.refine_until_no_improvement))->value_name("<bool>")->default_value(false),
     "Executes all refinement algorithm as long as they find an improvement on the current partition.")
+    (( initial_partitioning ? "i-r-use-kahypar-refinement" : "r-use-kahypar-refinement"),
+    po::value<bool>((!initial_partitioning ? &context.refinement.use_kahypar_refinement :
+      &context.initial_partitioning.refinement.use_kahypar_refinement))->value_name("<bool>")->default_value(false),
+    "Use k-way fm refiner of KaHyPar.")
     (( initial_partitioning ? "i-r-max-batch-size" : "r-max-batch-size"),
     po::value<size_t>((!initial_partitioning ? &context.refinement.max_batch_size :
       &context.initial_partitioning.refinement.max_batch_size))->value_name("<size_t>")->default_value(1000),

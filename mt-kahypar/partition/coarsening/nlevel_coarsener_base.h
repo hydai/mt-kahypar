@@ -22,6 +22,13 @@
 
 #include "tbb/task_group.h"
 
+#include "kahypar/partition/context.h"
+#include "kahypar/application/command_line_options.h"
+#include "kahypar/partition/coarsening/ml_coarsener.h"
+#include "kahypar/partition/refinement/kway_fm_km1_refiner.h"
+#include "kahypar/partition/refinement/policies/fm_stop_policy.h"
+#include "kahypar/partition/refinement/policies/fm_improvement_policy.h"
+
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/metrics.h"
@@ -29,6 +36,7 @@
 #include "mt-kahypar/partition/refinement/rebalancing/rebalancer.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
 #include "mt-kahypar/io/partitioning_output.h"
+#include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/utils/progress_bar.h"
 #include "mt-kahypar/utils/timer.h"
 #include "mt-kahypar/utils/stats.h"
@@ -42,8 +50,26 @@ class NLevelCoarsenerBase {
   static constexpr bool enable_heavy_assert = false;
 
   using ParallelHyperedgeVector = parallel::scalable_vector<parallel::scalable_vector<ParallelHyperedge>>;
+  using ContractionFunc = std::function<void (const HypernodeID, const HypernodeID)>;
+  using EndOfPassFunc = std::function<void ()>;
+  using UncontractionFunc = std::function<void (const kahypar::Metrics&)>;
+
+  using KaHyParRefiner = kahypar::KWayKMinusOneRefiner<kahypar::AdvancedRandomWalkModelStopsSearch,
+                                                       kahypar::CutDecreasedOrInfeasibleImbalanceDecreased>;
+  using KaHyParMemento = typename kahypar::Hypergraph::Memento;
 
  public:
+  using InternalKaHyParCoarsener = kahypar::MLCoarsener<kahypar::HeavyEdgeScore,
+                                                        kahypar::NoWeightPenalty,
+                                                        kahypar::UseCommunityStructure,
+                                                        kahypar::NormalPartitionPolicy,
+                                                        kahypar::BestRatingPreferringUnmatched<>,
+                                                        kahypar::AllowFreeOnFixedFreeOnFreeFixedOnFixed,
+                                                        kahypar::RatingType,
+                                                        ContractionFunc,
+                                                        EndOfPassFunc,
+                                                        UncontractionFunc>;
+
   NLevelCoarsenerBase(Hypergraph& hypergraph,
                       const Context& context,
                       const TaskGroupID task_group_id,
@@ -58,7 +84,12 @@ class NLevelCoarsenerBase {
     _compactified_phg(),
     _compactified_hn_mapping(),
     _hierarchy(),
-    _removed_hyperedges_batches() { }
+    _removed_hyperedges_batches(),
+    _kahypar_hg(nullptr),
+    _kahypar_context(setupKaHyParContext(context)),
+    _kahypar_coarsener(nullptr),
+    _to_kahypar_hg(),
+    _to_mt_kahypar_hg() { }
 
   NLevelCoarsenerBase(const NLevelCoarsenerBase&) = delete;
   NLevelCoarsenerBase(NLevelCoarsenerBase&&) = delete;
@@ -104,6 +135,17 @@ class NLevelCoarsenerBase {
     utils::Timer::instance().stop_timer("remove_single_pin_and_parallel_nets");
   }
 
+  void initializeCommunities(std::unique_ptr<kahypar::Hypergraph>& kahypar_hg,
+                             const parallel::scalable_vector<HypernodeID>& to_kahypar_hg) {
+    ASSERT(kahypar_hg);
+    std::vector<kahypar::PartitionID> communities(kahypar_hg->initialNumNodes());
+    _hg.doParallelForAllNodes([&](const HypernodeID hn) {
+      communities[to_kahypar_hg[hn]] = _hg.communityID(hn);
+    });
+    kahypar_hg->setCommunities(std::move(communities));
+  }
+
+
   PartitionedHypergraph&& doUncoarsen(std::unique_ptr<IRefiner>& label_propagation,
                                       std::unique_ptr<IRefiner>& fm) {
     ASSERT(_is_finalized);
@@ -111,27 +153,10 @@ class NLevelCoarsenerBase {
 
     // Project partition from compactified hypergraph to original hypergraph
     utils::Timer::instance().start_timer("initialize_partition", "Initialize Partition");
-    _phg = PartitionedHypergraph(_context.partition.k, _task_group_id, _hg);
-    _phg.doParallelForAllNodes([&](const HypernodeID hn) {
-      ASSERT(static_cast<size_t>(hn) < _compactified_hn_mapping.size());
-      const HypernodeID compactified_hn = _compactified_hn_mapping[hn];
-      const PartitionID block_id = _compactified_phg.partID(compactified_hn);
-      ASSERT(block_id != kInvalidPartition && block_id < _context.partition.k);
-      _phg.setOnlyNodePart(hn, block_id);
-    });
-    _phg.initializePartition(_task_group_id);
-    if ( _context.refinement.fm.algorithm != FMAlgorithm::do_nothing ) {
+    createPartitionedHypergraph();
+    if ( _context.refinement.fm.algorithm != FMAlgorithm::do_nothing && fm ) {
       _phg.initializeGainInformation();
     }
-
-    ASSERT(metrics::objective(_compactified_phg, _context.partition.objective) ==
-            metrics::objective(_phg, _context.partition.objective),
-            V(metrics::objective(_compactified_phg, _context.partition.objective)) <<
-            V(metrics::objective(_phg, _context.partition.objective)));
-    ASSERT(metrics::imbalance(_compactified_phg, _context) ==
-            metrics::imbalance(_phg, _context),
-            V(metrics::imbalance(_compactified_phg, _context)) <<
-            V(metrics::imbalance(_phg, _context)));
     utils::Timer::instance().stop_timer("initialize_partition");
 
     utils::ProgressBar uncontraction_progress(_hg.initialNumNodes(),
@@ -235,6 +260,119 @@ class NLevelCoarsenerBase {
     return std::move(_phg);
   }
 
+  PartitionedHypergraph&& doKaHyParUncoarsen() {
+    ASSERT(_is_finalized);
+
+    // Store mapping from compactified hg to original hypergraph
+    parallel::scalable_vector<HypernodeID> to_original_hg(_compactified_hg.initialNumNodes(), 0);
+    _hg.doParallelForAllNodes([&](const HypernodeID hn) {
+      const HypernodeID compactified_hn = _compactified_hn_mapping[hn];
+      ASSERT(compactified_hn < ID(to_original_hg.size()));
+      to_original_hg[compactified_hn] = hn;
+    });
+
+
+    const bool is_kahypar_initialized = _kahypar_hg != nullptr;
+    std::vector<KaHyParMemento> mementos;
+    if ( !is_kahypar_initialized ) {
+      // Create KaHyPar n-Level Hierarchy
+      for ( const BatchVector& batches : _hierarchy ) {
+        for ( const Batch& batch : batches ) {
+          for ( const Memento& memento : batch ) {
+            mementos.push_back(KaHyParMemento { memento.u, memento.v });
+          }
+        }
+      }
+    }
+
+    // Uncoarsen Mt-KaHyPar hypergraph
+    doUncoarsenWithoutRefinement();
+
+    if ( !is_kahypar_initialized ) {
+      // Simulate n-Level contractions on kahypar hypergraph
+      utils::Timer::instance().start_timer("simulate_mt_kahypar_n_level", "Simulate Mt-KaHyPar n-Level Hierarchy");
+
+      // Convert to KaHyPar Hypergraph
+      auto converted_kahypar_hypergraph = io::convertToKaHyParHypergraph(_hg, _context.partition.k);
+      _kahypar_hg = std::move(converted_kahypar_hypergraph.first);
+      _to_kahypar_hg = std::move(converted_kahypar_hypergraph.second);
+      _to_mt_kahypar_hg.assign(_kahypar_hg->initialNumNodes(), 0);
+      _hg.doParallelForAllNodes([&](const HypernodeID hn) {
+        const HypernodeID kahypar_hn = _to_kahypar_hg[hn];
+        _to_mt_kahypar_hg[kahypar_hn] = hn;
+      });
+      initializeCommunities(_kahypar_hg, _to_kahypar_hg);
+
+      // Simulate KaHyPar n-Level Hierarchy
+      if (_context.partition.verbose_output && _context.partition.enable_progress_bar) {
+        LOG << "Simulate n-Level Hierarchy on KaHyPar Hypergraph:";
+      }
+      utils::ProgressBar kahypar_contraction_progress(_kahypar_hg->initialNumNodes(), 0,
+        _context.partition.verbose_output && _context.partition.enable_progress_bar && !debug);
+      kahypar_contraction_progress += _kahypar_hg->currentNumNodes();
+      _kahypar_coarsener = std::make_unique<InternalKaHyParCoarsener>(
+        *_kahypar_hg, _kahypar_context, _kahypar_hg->weightOfHeaviestNode(),
+        [&](const HypernodeID, const HypernodeID) {
+          kahypar_contraction_progress += 1;
+        }, [&]() { }, [&](const kahypar::Metrics&) { });
+      _kahypar_coarsener->simulateContractions(mementos);
+      kahypar_contraction_progress += (_kahypar_hg->initialNumNodes() - kahypar_contraction_progress.count());
+      kahypar_contraction_progress.disable();
+
+      utils::Timer::instance().stop_timer("simulate_mt_kahypar_n_level");
+    }
+
+    // Initialize Mt-KaHyPar Partition on KaHyPar Hypergraph
+    utils::Timer::instance().start_timer("apply_mt_kahypar_partition", "Apply Mt-KaHyPar Partition");
+    ASSERT(_compactified_phg.initialNumNodes() == _kahypar_hg->currentNumNodes(),
+      V(_compactified_phg.initialNumNodes()) << V(_kahypar_hg->currentNumNodes()));
+    for ( const HypernodeID& hn : _compactified_phg.nodes() ) {
+      const HypernodeID kahypar_hn = _to_kahypar_hg[to_original_hg[hn]];
+      _kahypar_hg->setNodePart(kahypar_hn, _compactified_phg.partID(hn));
+    }
+    // Check if there are unassigned vertices
+    ASSERT([&] {
+      for ( const HypernodeID& hn : _kahypar_hg->nodes() ) {
+        if ( _kahypar_hg->partID(hn) == kInvalidPartition ) {
+          LOG << "Hypernode" << hn << "is unassigned";
+          return false;
+        }
+      }
+      return true;
+    }(), "KaHyPar hypergraph contains unassigned vertices");
+    _kahypar_hg->initializeNumCutHyperedges();
+    utils::Timer::instance().stop_timer("apply_mt_kahypar_partition");
+
+    // Perform KaHyPar Uncoarsening
+    utils::Timer::instance().start_timer("kahypar_uncoarsening", "KaHyPar Uncoarsening");
+    if (_context.partition.verbose_output && _context.partition.enable_progress_bar) {
+      LOG << "Perform KaHyPar n-Level Uncoarsening with k-Way FM Km1 Refiner:";
+    }
+    utils::ProgressBar kahypar_uncontraction_progress(_kahypar_hg->initialNumNodes(), 0,
+      _context.partition.verbose_output && _context.partition.enable_progress_bar && !debug);
+    kahypar_uncontraction_progress += _kahypar_hg->currentNumNodes();
+    _kahypar_coarsener->setUncontractionFunction([&](const kahypar::Metrics& metrics) {
+      kahypar_uncontraction_progress += 1;
+      kahypar_uncontraction_progress.setObjective(metrics.km1);
+    });
+    std::unique_ptr<kahypar::IRefiner> kahypar_refiner =
+      std::make_unique<KaHyParRefiner>(*_kahypar_hg, _kahypar_context);
+    _kahypar_coarsener->uncoarsen(*kahypar_refiner);
+    utils::Timer::instance().stop_timer("kahypar_uncoarsening");
+
+    // Apply Partition to Mt-KaHyPar Hypergraph
+    utils::Timer::instance().start_timer("apply_kahypar_partition", "Apply KaHyPar Partition");
+    _phg.resetPartition();
+    _phg.doParallelForAllNodes([&](const HypernodeID& hn) {
+      const HypernodeID kahypar_hn = _to_kahypar_hg[hn];
+      _phg.setOnlyNodePart(hn, _kahypar_hg->partID(kahypar_hn));
+    });
+    _phg.initializePartition(_task_group_id);
+    utils::Timer::instance().stop_timer("apply_kahypar_partition");
+
+    return std::move(_phg);
+  }
+
  protected:
   kahypar::Metrics computeMetrics(PartitionedHypergraph& phg) {
     HyperedgeWeight cut = 0;
@@ -310,6 +448,92 @@ class NLevelCoarsenerBase {
     }
   }
 
+  void createPartitionedHypergraph() {
+    _phg = PartitionedHypergraph(_context.partition.k, _task_group_id, _hg);
+    _phg.doParallelForAllNodes([&](const HypernodeID hn) {
+      ASSERT(static_cast<size_t>(hn) < _compactified_hn_mapping.size());
+      const HypernodeID compactified_hn = _compactified_hn_mapping[hn];
+      const PartitionID block_id = _compactified_phg.partID(compactified_hn);
+      ASSERT(block_id != kInvalidPartition && block_id < _context.partition.k);
+      _phg.setOnlyNodePart(hn, block_id);
+    });
+    _phg.initializePartition(_task_group_id);
+
+    ASSERT(metrics::objective(_compactified_phg, _context.partition.objective) ==
+            metrics::objective(_phg, _context.partition.objective),
+            V(metrics::objective(_compactified_phg, _context.partition.objective)) <<
+            V(metrics::objective(_phg, _context.partition.objective)));
+    ASSERT(metrics::imbalance(_compactified_phg, _context) ==
+            metrics::imbalance(_phg, _context),
+            V(metrics::imbalance(_compactified_phg, _context)) <<
+            V(metrics::imbalance(_phg, _context)));
+  }
+
+  void doUncoarsenWithoutRefinement() {
+    ASSERT(_is_finalized);
+    kahypar::Metrics current_metrics = initialize(_compactified_phg);
+
+    // Project partition from compactified hypergraph to original hypergraph
+    utils::Timer::instance().start_timer("initialize_partition", "Initialize Partition");
+    createPartitionedHypergraph();
+    utils::Timer::instance().stop_timer("initialize_partition");
+
+    if (_context.partition.verbose_output && _context.partition.enable_progress_bar) {
+      LOG << "Uncoarsen Mt-KaHyPar Hypergraph Without Refinement:";
+    }
+    utils::ProgressBar uncontraction_progress(_hg.initialNumNodes(),
+      _context.partition.objective == kahypar::Objective::km1 ? current_metrics.km1 : current_metrics.cut,
+      _context.partition.verbose_output && _context.partition.enable_progress_bar && !debug);
+    uncontraction_progress += _compactified_hg.initialNumNodes();
+
+    // Perform batch uncontractions
+    utils::Timer::instance().start_timer("batch_uncontractions", "Batch Uncontractions");
+    while ( !_hierarchy.empty() ) {
+      BatchVector& batches = _hierarchy.back();
+
+      // Uncontract all batches of a specific version of the hypergraph
+      while ( !batches.empty() ) {
+        const Batch& batch = batches.back();
+        if ( batch.size() > 0 ) {
+          _phg.uncontract(batch);
+          HEAVY_REFINEMENT_ASSERT(_phg.checkTrackedPartitionInformation());
+
+          // Update Progress Bar
+          uncontraction_progress.setObjective(current_metrics.getMetric(
+            _context.partition.mode, _context.partition.objective));
+          uncontraction_progress += batch.size();
+        }
+        batches.pop_back();
+      }
+
+      // Restore single-pin and parallel nets to continue with the next vector of batches
+      if ( !_removed_hyperedges_batches.empty() ) {
+        utils::Timer::instance().start_timer("restore_single_pin_and_parallel_nets", "Restore Single Pin and Parallel Nets");
+        _phg.restoreSinglePinAndParallelNets(_removed_hyperedges_batches.back());
+        _removed_hyperedges_batches.pop_back();
+        utils::Timer::instance().stop_timer("restore_single_pin_and_parallel_nets");
+      }
+      _hierarchy.pop_back();
+    }
+    utils::Timer::instance().stop_timer("batch_uncontractions");
+  }
+
+  kahypar::Context setupKaHyParContext(const Context& context) {
+    kahypar::Context kahypar_context;
+    kahypar::parseIniToContext(kahypar_context, context.partition.kahypar_context);
+
+    kahypar_context.partition.k = context.partition.k;
+    kahypar_context.partition.epsilon = context.partition.epsilon;
+    kahypar_context.partition.mode = context.partition.mode;
+    kahypar_context.partition.objective = context.partition.objective;
+    kahypar_context.partition.perfect_balance_part_weights = context.partition.perfect_balance_part_weights;
+    kahypar_context.partition.max_part_weights = context.partition.max_part_weights;
+    kahypar_context.coarsening.contraction_limit = context.coarsening.contraction_limit;
+    kahypar_context.coarsening.max_allowed_node_weight = context.coarsening.max_allowed_node_weight;
+
+    return kahypar_context;
+  }
+
   // ! True, if coarsening terminates and finalize function was called
   bool _is_finalized;
 
@@ -343,5 +567,11 @@ class NLevelCoarsenerBase {
   // ! All hyperedges that are contained in one vector must be restored once
   // ! we completly processed a vector of batches.
   ParallelHyperedgeVector _removed_hyperedges_batches;
+
+  std::unique_ptr<kahypar::Hypergraph> _kahypar_hg;
+  kahypar::Context _kahypar_context;
+  std::unique_ptr<InternalKaHyParCoarsener> _kahypar_coarsener;
+  parallel::scalable_vector<HypernodeID> _to_kahypar_hg;
+  parallel::scalable_vector<HypernodeID> _to_mt_kahypar_hg;
 };
 }  // namespace mt_kahypar
