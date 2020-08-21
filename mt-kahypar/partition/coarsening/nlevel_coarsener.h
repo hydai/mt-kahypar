@@ -154,6 +154,8 @@ class NLevelCoarsener : public ICoarsener,
       current_num_nodes = initial_num_nodes -
         contracted_nodes.combine(std::plus<HypernodeID>());
 
+      HEAVY_COARSENING_ASSERT(_hg.verifyIncidenceArrayAndIncidentNets());
+
       // Terminate contraction if the number of contracted vertices in this round
       // is smaller than a certain fraction.
       const double reduction_vertices_percentage =
