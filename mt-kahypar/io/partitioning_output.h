@@ -431,6 +431,14 @@ static inline void printVCycleBanner(const Context& context, const size_t vcycle
   }
 }
 
+static inline void printWCycleBanner(const Context& context) {
+  if (context.partition.verbose_output) {
+    LOG << "\n********************************************************************************";
+    LOG << "*                                 W-Cycle                                      *";
+    LOG << "********************************************************************************";
+  }
+}
+
 inline void printObjectives(const PartitionedHypergraph& hypergraph,
                             const Context& context,
                             const std::chrono::duration<double>& elapsed_seconds) {

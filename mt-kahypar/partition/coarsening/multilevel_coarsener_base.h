@@ -35,6 +35,12 @@
 
 namespace mt_kahypar {
 
+namespace multilevel {
+static inline void partitionWCycle(Hypergraph& hypergraph,
+                                   PartitionedHypergraph& partitioned_hypergraph,
+                                   Context& context);
+}  // namespace multilevel
+
 class MultilevelCoarsenerBase {
  private:
 
@@ -230,6 +236,7 @@ class MultilevelCoarsenerBase {
     double time_limit = refinementTimeLimit(_hierarchies.back());
     refine(coarsest_hg, label_propagation, fm, current_metrics, time_limit);
 
+    Context w_cycle_context(_context);
     for ( int i = _hierarchies.size() - 1; i >= 0; --i ) {
       // Project partition to next level finer hypergraph
       utils::Timer::instance().start_timer("projecting_partition", "Projecting Partition");
@@ -260,6 +267,14 @@ class MultilevelCoarsenerBase {
       // Update Progress Bar
       uncontraction_progress.setObjective(current_metrics.getMetric(_context.partition.mode, _context.partition.objective));
       uncontraction_progress += representative_hg.initialNumNodes() - contracted_hg.initialNumNodes();
+
+      // Perform W-Cycle
+      if ( _top_level && !w_cycle_context.partition.w_cycle_thresholds.empty() &&
+           representative_hg.initialNumNodes() >= ID(w_cycle_context.partition.w_cycle_thresholds.back()) ) {
+        if ( uncontraction_progress.is_enabled() ) std::cout << std::endl;
+        multilevel::partitionWCycle(representative_hg.hypergraph(), representative_hg, w_cycle_context);
+        current_metrics = computeMetrics(representative_hg);
+      }
     }
 
     // If we reach the original hypergraph and partition is imbalanced, we try to rebalance it

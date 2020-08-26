@@ -228,13 +228,27 @@ class MemoryPool {
     return _is_initialized;
   }
 
+  bool is_active() const {
+    return _is_active;
+  }
+
+  void activate() {
+    ASSERT(!_is_active);
+    _is_active = true;
+  }
+
+  void deactivate() {
+    ASSERT(_is_active);
+    _is_active = false;
+  }
+
   // ! Registers a memory group in the memory pool. A memory
   // ! group is associated with a stage. Assumption is that, if
   // ! a stage is completed, than memory is not needed any more
   // ! and can be reused in a consecutive stage.
   void register_memory_group(const std::string& group,
                              const size_t stage) {
-    if ( _memory_groups.find(group) == _memory_groups.end() ) {
+    if ( _is_active && _memory_groups.find(group) == _memory_groups.end() ) {
       _memory_groups.emplace(std::piecewise_construct,
         std::forward_as_tuple(group), std::forward_as_tuple(stage));
     }
@@ -250,7 +264,7 @@ class MemoryPool {
                              const size_t size,
                              const int node = 0) {
     std::unique_lock<std::shared_timed_mutex> lock(_memory_mutex);
-    if ( _memory_groups.find(group) != _memory_groups.end() ) {
+    if ( _is_active && _memory_groups.find(group) != _memory_groups.end() ) {
       MemoryGroup& mem_group = _memory_groups.at(group);
       const size_t memory_id = _memory_chunks.size();
       if ( !mem_group.containsKey(key) ) {
@@ -298,7 +312,9 @@ class MemoryPool {
     DBG << "Requests memory chunk (" << group << "," << key << ")"
         << "of" <<  size_in_megabyte(size_in_bytes) << "MB"
         << "in memory pool";
-    if ( !_use_minimum_allocation_size || size_in_bytes > MINIMUM_ALLOCATION_SIZE ) {
+    if ( _is_active &&
+         ( !_use_minimum_allocation_size ||
+           size_in_bytes > MINIMUM_ALLOCATION_SIZE ) ) {
       std::shared_lock<std::shared_timed_mutex> lock(_memory_mutex);
       MemoryChunk* chunk = find_memory_chunk(group, key);
 
@@ -321,7 +337,7 @@ class MemoryPool {
   char* request_unused_mem_chunk(const size_t num_elements,
                                  const size_t size,
                                  const bool align_with_page_size = true) {
-    if ( _is_initialized ) {
+    if ( _is_initialized && _is_active ) {
       DBG << "Request unused memory chunk of"
           << size_in_megabyte(num_elements * size) << "MB";
       const size_t size_in_bytes = num_elements * size;
@@ -360,7 +376,7 @@ class MemoryPool {
                   const std::string& key) {
     std::shared_lock<std::shared_timed_mutex> lock(_memory_mutex);
     MemoryChunk* chunk = find_memory_chunk(group, key);
-    if ( chunk )   {
+    if ( _is_active && chunk )   {
       return chunk->_data;
     } else {
       return nullptr;
@@ -374,7 +390,7 @@ class MemoryPool {
                          const std::string& key) {
     std::shared_lock<std::shared_timed_mutex> lock(_memory_mutex);
     MemoryChunk* chunk = find_memory_chunk(group, key);
-    if ( chunk ) {
+    if ( _is_active && chunk ) {
       DBG << "Release memory chunk (" << group << "," << key << ")";
       chunk->release_chunk();
     }
@@ -384,39 +400,41 @@ class MemoryPool {
   // ! required any more. If an optimized memory allocation strategy
   // ! was calculated before, the memory is passed to next group.
   void release_mem_group(const std::string& group) {
-    std::unique_lock<std::shared_timed_mutex> lock(_memory_mutex);
+    if ( _is_active ) {
+      std::unique_lock<std::shared_timed_mutex> lock(_memory_mutex);
 
-    if ( _memory_groups.find(group) != _memory_groups.end() ) {
-      ASSERT([&] {
+      if ( _memory_groups.find(group) != _memory_groups.end() ) {
+        ASSERT([&] {
+          for ( const auto& key : _memory_groups.at(group)._key_to_memory_id ) {
+            const size_t memory_id = key.second;
+            if ( _memory_chunks[memory_id]._is_assigned ) {
+              LOG << "(" << group << "," << key.first << ")"
+                  << "is assigned";
+              return false;
+            }
+          }
+          return true;
+        }(), "Some memory chunks of group '" << group << "' are still assigned");
+
+        DBG << "Release memory of group '" << group << "'";
         for ( const auto& key : _memory_groups.at(group)._key_to_memory_id ) {
           const size_t memory_id = key.second;
-          if ( _memory_chunks[memory_id]._is_assigned ) {
-            LOG << "(" << group << "," << key.first << ")"
-                << "is assigned";
-            return false;
+          MemoryChunk& lhs = _memory_chunks[memory_id];
+          ASSERT(lhs._data);
+          if ( lhs._next_memory_chunk_id != kInvalidMemoryChunk ) {
+            ASSERT(lhs._next_memory_chunk_id < _memory_chunks.size());
+            MemoryChunk& rhs = _memory_chunks[lhs._next_memory_chunk_id];
+            rhs._data = lhs._data;
+            lhs._data = nullptr;
+          } else {
+            // Memory chunk is not required any more
+            // => make it available for unused memory requests
+            lhs._used_size = 0;
+            lhs._is_assigned = true;
           }
         }
-        return true;
-      }(), "Some memory chunks of group '" << group << "' are still assigned");
-
-      DBG << "Release memory of group '" << group << "'";
-      for ( const auto& key : _memory_groups.at(group)._key_to_memory_id ) {
-        const size_t memory_id = key.second;
-        MemoryChunk& lhs = _memory_chunks[memory_id];
-        ASSERT(lhs._data);
-        if ( lhs._next_memory_chunk_id != kInvalidMemoryChunk ) {
-          ASSERT(lhs._next_memory_chunk_id < _memory_chunks.size());
-          MemoryChunk& rhs = _memory_chunks[lhs._next_memory_chunk_id];
-          rhs._data = lhs._data;
-          lhs._data = nullptr;
-        } else {
-          // Memory chunk is not required any more
-          // => make it available for unused memory requests
-          lhs._used_size = 0;
-          lhs._is_assigned = true;
-        }
+        update_active_memory_chunks();
       }
-      update_active_memory_chunks();
     }
   }
 
@@ -574,6 +592,7 @@ class MemoryPool {
   explicit MemoryPool() :
     _memory_mutex(),
     _is_initialized(false),
+    _is_active(true),
     _page_size(sysconf(_SC_PAGE_SIZE)),
     _memory_groups(),
     _memory_chunks(),
@@ -721,6 +740,8 @@ class MemoryPool {
   mutable std::shared_timed_mutex _memory_mutex;
   // ! Initialize Flag
   bool _is_initialized;
+  // ! If false, then memory pool does not return any memory chunks
+  bool _is_active;
   // ! Page size of the system
   size_t _page_size;
   // ! Mapping from group-key to a memory chunk id

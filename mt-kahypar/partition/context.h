@@ -39,6 +39,7 @@ struct PartitioningParameters {
   PartitionID k = std::numeric_limits<PartitionID>::max();
   int seed = 0;
   size_t num_vcycles = 0;
+  std::vector<double> w_cycle_thresholds;
 
   int time_limit = 0;
   std::vector<HypernodeWeight> perfect_balance_part_weights;
@@ -81,6 +82,13 @@ inline std::ostream & operator<< (std::ostream& str, const PartitioningParameter
   str << "  epsilon:                            " << params.epsilon << std::endl;
   str << "  seed:                               " << params.seed << std::endl;
   str << "  Number of V-Cycles:                 " << params.num_vcycles << std::endl;
+  if ( !params.w_cycle_thresholds.empty() ) {
+    str << "  W-Cycle Thresholds:                 [" << params.w_cycle_thresholds[0];
+    for ( size_t i = 1; i < params.w_cycle_thresholds.size(); ++i ) {
+      str << ", " << params.w_cycle_thresholds[i];
+    }
+    str << "]" << std::endl;
+  }
   str << "  Ignore HE Size Threshold:           " << params.ignore_hyperedge_size_threshold << std::endl;
   str << "  Large HE Size Threshold:            " << params.large_hyperedge_size_threshold << std::endl;
   return str;

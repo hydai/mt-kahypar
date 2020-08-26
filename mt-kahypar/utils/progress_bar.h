@@ -59,6 +59,10 @@ class ProgressBar {
     finalize();
   }
 
+  bool is_enabled() const {
+    return _enable;
+  }
+
   void enable() {
     _enable = true;
     display_progress();

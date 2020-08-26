@@ -31,6 +31,8 @@
 #include "mt-kahypar/parallel/memory_pool.h"
 #include "mt-kahypar/utils/initial_partitioning_stats.h"
 #include "mt-kahypar/utils/profiler.h"
+#include "mt-kahypar/utils/timer.h"
+#include "mt-kahypar/utils/stats.h"
 
 namespace mt_kahypar {
 namespace multilevel {
@@ -46,7 +48,8 @@ class RefinementTask : public tbb::task {
                  PartitionedHypergraph& partitioned_hypergraph,
                  const Context& context,
                  const bool top_level,
-                 const TaskGroupID task_group_id) :
+                 const TaskGroupID task_group_id,
+                 const bool wcycle) :
     _coarsener(nullptr),
     _sparsifier(nullptr),
     _ip_context(context),
@@ -54,7 +57,8 @@ class RefinementTask : public tbb::task {
     _partitioned_hg(partitioned_hypergraph),
     _context(context),
     _top_level(top_level),
-    _task_group_id(task_group_id) {
+    _task_group_id(task_group_id),
+    _wcycle(wcycle) {
     // Must be empty, because final partitioned hypergraph
     // is moved into this object
     _coarsener = CoarsenerFactory::getInstance().createObject(
@@ -81,7 +85,7 @@ class RefinementTask : public tbb::task {
 
     utils::Timer::instance().stop_timer("initial_partitioning");
 
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       utils::Profiler::instance().deactivate("Initial Partitioning");
     }
 
@@ -96,7 +100,7 @@ class RefinementTask : public tbb::task {
     // ################## LOCAL SEARCH ##################
     io::printLocalSearchBanner(_context);
 
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       utils::Profiler::instance().activate("Refinement");
     }
 
@@ -113,7 +117,7 @@ class RefinementTask : public tbb::task {
     _partitioned_hg = _coarsener->uncoarsen(label_propagation, fm);
     utils::Timer::instance().stop_timer("refinement");
 
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       utils::Profiler::instance().deactivate("Refinement");
     }
 
@@ -128,7 +132,7 @@ class RefinementTask : public tbb::task {
 
  private:
   void enableTimerAndStats() {
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       parallel::MemoryPool::instance().activate_unused_memory_allocations();
       utils::Timer::instance().enable();
       utils::Stats::instance().enable();
@@ -140,6 +144,7 @@ class RefinementTask : public tbb::task {
   const Context& _context;
   const bool _top_level;
   const TaskGroupID _task_group_id;
+  const bool _wcycle;
 };
 
 class CoarseningTask : public tbb::task {
@@ -152,7 +157,8 @@ class CoarseningTask : public tbb::task {
                  ICoarsener& coarsener,
                  const bool top_level,
                  const TaskGroupID task_group_id,
-                 const bool vcycle) :
+                 const bool vcycle,
+                 const bool wcycle) :
     _hg(hypergraph),
     _sparsifier(sparsifier),
     _context(context),
@@ -160,13 +166,14 @@ class CoarseningTask : public tbb::task {
     _coarsener(coarsener),
     _top_level(top_level),
     _task_group_id(task_group_id),
-    _vcycle(vcycle) { }
+    _vcycle(vcycle),
+    _wcycle(wcycle) { }
 
   tbb::task* execute() override {
     // ################## COARSENING ##################
     mt_kahypar::io::printCoarseningBanner(_context);
 
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       utils::Profiler::instance().activate("Coarsening");
     }
 
@@ -174,7 +181,7 @@ class CoarseningTask : public tbb::task {
     _coarsener.coarsen();
     utils::Timer::instance().stop_timer("coarsening");
 
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       utils::Profiler::instance().deactivate("Coarsening");
     }
 
@@ -211,7 +218,7 @@ class CoarseningTask : public tbb::task {
   void initialPartition(PartitionedHypergraph& phg) {
     io::printInitialPartitioningBanner(_context);
 
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       utils::Profiler::instance().activate("Initial Partitioning");
     }
 
@@ -242,7 +249,7 @@ class CoarseningTask : public tbb::task {
   }
 
   void disableTimerAndStats() {
-    if ( _top_level ) {
+    if ( _top_level && !_wcycle ) {
       parallel::MemoryPool::instance().deactivate_unused_memory_allocations();
       utils::Timer::instance().disable();
       utils::Stats::instance().disable();
@@ -257,6 +264,7 @@ class CoarseningTask : public tbb::task {
   const bool _top_level;
   const TaskGroupID _task_group_id;
   const bool _vcycle;
+  const bool _wcycle;
 };
 
 // ! Helper function that spawns the multilevel partitioner in
@@ -267,16 +275,18 @@ static void spawn_multilevel_partitioner(Hypergraph& hypergraph,
                                          const bool top_level,
                                          const TaskGroupID task_group_id,
                                          const bool vcycle,
+                                         const bool wcycle,
                                          tbb::task& parent) {
   // The coarsening task is first executed and once it finishes the
   // refinement task continues (without blocking)
   RefinementTask& refinement_task = *new(parent.allocate_continuation())
-    RefinementTask(hypergraph, partitioned_hypergraph, context, top_level, task_group_id);
+    RefinementTask(hypergraph, partitioned_hypergraph, context, top_level, task_group_id, wcycle);
   refinement_task.set_ref_count(1);
   CoarseningTask& coarsening_task = *new(refinement_task.allocate_child()) CoarseningTask(
     hypergraph, *refinement_task._sparsifier,
      context, refinement_task._ip_context,
-     *refinement_task._coarsener, top_level, task_group_id, vcycle);
+     *refinement_task._coarsener, top_level, task_group_id,
+     vcycle, wcycle);
   tbb::task::spawn(coarsening_task);
 }
 
@@ -288,18 +298,20 @@ class MultilevelPartitioningTask : public tbb::task {
                              const Context& context,
                              const bool top_level,
                              const TaskGroupID task_group_id,
-                             const bool vcycle) :
+                             const bool vcycle,
+                             const bool wcycle) :
     _hg(hypergraph),
     _partitioned_hg(partitioned_hypergraph),
     _context(context),
     _top_level(top_level),
     _task_group_id(task_group_id),
-    _vcycle(vcycle) { }
+    _vcycle(vcycle),
+    _wcycle(wcycle) { }
 
   tbb::task* execute() override {
     spawn_multilevel_partitioner(
     _hg, _partitioned_hg, _context, _top_level,
-    _task_group_id, _vcycle, *this);
+    _task_group_id, _vcycle, _wcycle, *this);
     return nullptr;
   }
 
@@ -310,6 +322,7 @@ class MultilevelPartitioningTask : public tbb::task {
   const bool _top_level;
   const TaskGroupID _task_group_id;
   const bool _vcycle;
+  const bool _wcycle;
 };
 
 } // namespace
@@ -320,12 +333,13 @@ static inline PartitionedHypergraph partition(Hypergraph& hypergraph,
                                               const Context& context,
                                               const bool top_level,
                                               const TaskGroupID task_group_id,
-                                              const bool vcycle = false) {
+                                              const bool vcycle = false,
+                                              const bool wcycle = false) {
   PartitionedHypergraph partitioned_hypergraph;
   MultilevelPartitioningTask& multilevel_task = *new(tbb::task::allocate_root())
     MultilevelPartitioningTask(
       hypergraph, partitioned_hypergraph,
-      context, top_level, task_group_id, vcycle);
+      context, top_level, task_group_id, vcycle, wcycle);
   tbb::task::spawn_root_and_wait(multilevel_task);
   return partitioned_hypergraph;
 }
@@ -343,7 +357,77 @@ static inline void partition_async(Hypergraph& hypergraph,
   ASSERT(parent);
   spawn_multilevel_partitioner(
     hypergraph, partitioned_hypergraph, context,
-    top_level, task_group_id, false, *parent);
+    top_level, task_group_id, false, false, *parent);
+}
+
+static inline void partitionWCycle(Hypergraph& hypergraph,
+                                   PartitionedHypergraph& partitioned_hypergraph,
+                                   Context& context) {
+  // Deactivate Memory Pool if active
+  const bool memory_pool_active = parallel::MemoryPool::instance().is_active();
+  if ( memory_pool_active ) {
+    parallel::MemoryPool::instance().deactivate();
+  }
+  // Deactivate Timer if active
+  const bool timer_active = utils::Timer::instance().isEnabled();
+  if ( timer_active ) {
+    utils::Timer::instance().disable();
+  }
+  // Deactivate Stats if active
+  const bool stats_active = utils::Stats::instance().isEnabled();
+  if ( stats_active ) {
+    utils::Stats::instance().disable();
+  }
+
+  parallel::scalable_vector<PartitionID> part_ids(
+    hypergraph.initialNumNodes(), kInvalidPartition);
+
+  // Store partition and assign it as community ids in order to
+  // restrict contractions in w-cycle to partition ids
+  hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
+    part_ids[hn] = partitioned_hypergraph.partID(hn);
+  });
+  hypergraph.setCommunityIDs(part_ids);
+
+  // W-Cycle Multilevel Partitioning
+  ASSERT(!context.partition.w_cycle_thresholds.empty());
+  const HypernodeID w_cycle_threshold = context.partition.w_cycle_thresholds.back();
+  context.partition.w_cycle_thresholds.pop_back();
+  io::printWCycleBanner(context);
+  PartitionedHypergraph w_cycle_phg = multilevel::partition(
+    hypergraph, context, true, TBBNumaArena::GLOBAL_TASK_GROUP, false, true /* wcycle */);
+  while ( !context.partition.w_cycle_thresholds.empty() &&
+          w_cycle_threshold >= context.partition.w_cycle_thresholds.back() ) {
+    context.partition.w_cycle_thresholds.pop_back();
+  }
+
+  // Apply Partition of W-Cycle
+  partitioned_hypergraph.doParallelForAllNodes([&](const HypernodeID hn) {
+    ASSERT(w_cycle_phg.nodeIsEnabled(hn));
+    const PartitionID from = partitioned_hypergraph.partID(hn);
+    const PartitionID to = w_cycle_phg.partID(hn);
+    if ( from != to ) {
+      ASSERT(to != kInvalidPartition);
+      if ( partitioned_hypergraph.isGainCacheInitialized() ) {
+        partitioned_hypergraph.changeNodePartFullUpdate(hn, from, to);
+      } else {
+        partitioned_hypergraph.changeNodePart(hn, from, to);
+      }
+    }
+  });
+
+  // Activate Memory Pool again
+  if ( memory_pool_active ) {
+    parallel::MemoryPool::instance().activate();
+  }
+  // Activate Timer again
+  if ( timer_active ) {
+    utils::Timer::instance().enable();
+  }
+  // Activate Stats again
+  if ( stats_active ) {
+    utils::Stats::instance().enable();
+  }
 }
 
 }  // namespace multilevel

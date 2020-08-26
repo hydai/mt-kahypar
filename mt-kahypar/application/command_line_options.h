@@ -66,6 +66,11 @@ po::options_description createGeneralOptionsDescription(Context& context, const 
     ("num-vcycles",
     po::value<size_t>(&context.partition.num_vcycles)->value_name("<size_t>")->default_value(0),
     "Number of V-Cycles")
+    ("w-cycle-thresholds",
+    po::value<std::vector<double> >(&context.partition.w_cycle_thresholds)->multitoken(),
+    "Thresholds that controls how many w-cycles and when they are performed.\n"
+    "Each value must be between 0.0 and 1.0. E.g. --w-cycle-thresholds=0.1 0.5 means that 2 w-cycles\n"
+    "are performed and the first if the hypergraph has size 0.1 * |V| and the second if the size is 0.5 * |V|")
     ("maxnet-remove-factor",
     po::value<double>(&context.partition.large_hyperedge_size_threshold_factor)->value_name("<double>")->default_value(0.01),
     "Hyperedges larger than |V| * (this factor) are removed before partitioning.")

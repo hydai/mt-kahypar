@@ -479,6 +479,8 @@ class RecursiveBisectionInitialPartitioner : public IInitialPartitioner {
 
  private:
   void initialPartitionImpl() override final {
+    const bool timer_active = utils::Timer::instance().isEnabled();
+    const bool stats_active = utils::Stats::instance().isEnabled();
     if (_top_level) {
       parallel::MemoryPool::instance().deactivate_unused_memory_allocations();
       utils::Timer::instance().disable();
@@ -492,8 +494,12 @@ class RecursiveBisectionInitialPartitioner : public IInitialPartitioner {
 
     if (_top_level) {
       parallel::MemoryPool::instance().activate_unused_memory_allocations();
-      utils::Timer::instance().enable();
-      utils::Stats::instance().enable();
+      if ( timer_active ) {
+        utils::Timer::instance().enable();
+      }
+      if ( stats_active ) {
+        utils::Stats::instance().enable();
+      }
     }
   }
 

@@ -39,6 +39,7 @@
 
 namespace mt_kahypar {
 namespace partition {
+
 class Partitioner {
  private:
   static constexpr bool debug = false;
@@ -81,6 +82,17 @@ inline void Partitioner::setupContext(Hypergraph& hypergraph, Context& context) 
   context.setupPartWeights(hypergraph.totalWeight());
   context.setupContractionLimit(hypergraph.totalWeight());
   context.sanityCheck();
+
+  // Setup W-Cycle Thresholds
+  for ( size_t i = 0; i < context.partition.w_cycle_thresholds.size(); ++i ) {
+    if ( context.partition.w_cycle_thresholds[i] < 0.0 ||
+         context.partition.w_cycle_thresholds[i] > 1.0 ) {
+      ERROR("W-Cycle Threshold must be greater or equal than 0.0 and smaller or equal than 1.0.");
+    }
+    context.partition.w_cycle_thresholds[i] =
+      ID(context.partition.w_cycle_thresholds[i] * hypergraph.initialNumNodes());
+  }
+  std::reverse(context.partition.w_cycle_thresholds.begin(), context.partition.w_cycle_thresholds.end());
 }
 
 inline void Partitioner::configurePreprocessing(const Hypergraph& hypergraph, Context& context) {
@@ -182,8 +194,8 @@ inline PartitionedHypergraph Partitioner::partitionVCycle(Hypergraph& hypergraph
   parallel::scalable_vector<PartitionID> part_ids(hypergraph.initialNumNodes(), kInvalidPartition);
 
   for ( size_t i = 0; i < _context.partition.num_vcycles; ++i ) {
-    // Reset memory pool
     hypergraph.reset();
+    // Reset memory pool
     parallel::MemoryPool::instance().reset();
     parallel::MemoryPool::instance().release_mem_group("Preprocessing");
 
