@@ -22,8 +22,9 @@
 
 #include "tests/datastructures/hypergraph_fixtures.h"
 #include "mt-kahypar/definitions.h"
-#include "mt-kahypar/partition/coarsening/multilevel_coarsener.h"
-#include "mt-kahypar/partition/coarsening/nlevel_coarsener.h"
+#include "mt-kahypar/partition/context.h"
+#include "mt-kahypar/partition/registries/register_coarsening_algorithms.h"
+#include "mt-kahypar/partition/multilevel.h"
 
 using ::testing::Test;
 using ::testing::Eq;
