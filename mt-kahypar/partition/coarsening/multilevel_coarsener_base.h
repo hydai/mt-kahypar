@@ -35,12 +35,6 @@
 
 namespace mt_kahypar {
 
-namespace multilevel {
-static inline void partitionWCycle(Hypergraph& hypergraph,
-                                   PartitionedHypergraph& partitioned_hypergraph,
-                                   Context& context);
-}  // namespace multilevel
-
 class MultilevelCoarsenerBase {
  private:
 

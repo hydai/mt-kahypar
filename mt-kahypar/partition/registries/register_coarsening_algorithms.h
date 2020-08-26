@@ -21,6 +21,14 @@
 
 #pragma once
 
+namespace mt_kahypar {
+namespace multilevel {
+static inline void partitionWCycle(Hypergraph& hypergraph,
+                                   PartitionedHypergraph& partitioned_hypergraph,
+                                   Context& context);
+} // namespace multilevel
+} // namespace mt_kahypar
+
 #include "kahypar/meta/registrar.h"
 
 #include "mt-kahypar/partition/context.h"
@@ -37,6 +45,7 @@
   })
 
 namespace mt_kahypar {
+
 REGISTER_DISPATCHED_COARSENER(CoarseningAlgorithm::multilevel_coarsener,
                               MultilevelCoarsenerDispatcher,
                               kahypar::meta::PolicyRegistry<RatingFunction>::getInstance().getPolicy(

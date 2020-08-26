@@ -49,6 +49,7 @@ class RefinementTask : public tbb::task {
                  const Context& context,
                  const bool top_level,
                  const TaskGroupID task_group_id,
+                 const bool vcycle,
                  const bool wcycle) :
     _coarsener(nullptr),
     _sparsifier(nullptr),
@@ -58,6 +59,7 @@ class RefinementTask : public tbb::task {
     _context(context),
     _top_level(top_level),
     _task_group_id(task_group_id),
+    _vcycle(vcycle),
     _wcycle(wcycle) {
     // Must be empty, because final partitioned hypergraph
     // is moved into this object
@@ -93,7 +95,7 @@ class RefinementTask : public tbb::task {
       _coarsener->coarsestPartitionedHypergraph();
     io::printPartitioningResults(coarsest_partitioned_hypergraph,
       _context, "Initial Partitioning Results:");
-    if ( _context.partition.verbose_output ) {
+    if ( _context.partition.verbose_output && (!_vcycle && !_wcycle) ) {
       utils::InitialPartitioningStats::instance().printInitialPartitioningStats();
     }
 
@@ -144,6 +146,7 @@ class RefinementTask : public tbb::task {
   const Context& _context;
   const bool _top_level;
   const TaskGroupID _task_group_id;
+  const bool _vcycle;
   const bool _wcycle;
 };
 
@@ -222,7 +225,7 @@ class CoarseningTask : public tbb::task {
       utils::Profiler::instance().activate("Initial Partitioning");
     }
 
-    if ( !_vcycle ) {
+    if ( !_vcycle && !_wcycle ) {
       if ( _context.initial_partitioning.mode == InitialPartitioningMode::direct ) {
         disableTimerAndStats();
         PoolInitialPartitionerContinuation& ip_continuation = *new(allocate_continuation())
@@ -280,7 +283,8 @@ static void spawn_multilevel_partitioner(Hypergraph& hypergraph,
   // The coarsening task is first executed and once it finishes the
   // refinement task continues (without blocking)
   RefinementTask& refinement_task = *new(parent.allocate_continuation())
-    RefinementTask(hypergraph, partitioned_hypergraph, context, top_level, task_group_id, wcycle);
+    RefinementTask(hypergraph, partitioned_hypergraph, context, top_level,
+      task_group_id, vcycle, wcycle);
   refinement_task.set_ref_count(1);
   CoarseningTask& coarsening_task = *new(refinement_task.allocate_child()) CoarseningTask(
     hypergraph, *refinement_task._sparsifier,
@@ -360,6 +364,104 @@ static inline void partition_async(Hypergraph& hypergraph,
     top_level, task_group_id, false, false, *parent);
 }
 
+namespace {
+
+static inline void partitionMultilevelWCycle(Hypergraph& hypergraph,
+                                             PartitionedHypergraph& partitioned_hypergraph,
+                                             const Context& context) {
+  parallel::scalable_vector<PartitionID> part_ids(
+    hypergraph.initialNumNodes(), kInvalidPartition);
+
+  // Store partition and assign it as community ids in order to
+  // restrict contractions in w-cycle to partition ids
+  hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
+    part_ids[hn] = partitioned_hypergraph.partID(hn);
+  });
+  hypergraph.setCommunityIDs(part_ids);
+
+  // W-Cycle Multilevel Partitioning
+  PartitionedHypergraph w_cycle_phg = multilevel::partition(
+    hypergraph, context, true, TBBNumaArena::GLOBAL_TASK_GROUP, false, true /* wcycle */);
+
+  // Apply Partition of W-Cycle
+  partitioned_hypergraph.doParallelForAllNodes([&](const HypernodeID hn) {
+    ASSERT(w_cycle_phg.nodeIsEnabled(hn));
+    const PartitionID from = partitioned_hypergraph.partID(hn);
+    const PartitionID to = w_cycle_phg.partID(hn);
+    if ( from != to ) {
+      ASSERT(to != kInvalidPartition);
+      if ( partitioned_hypergraph.isGainCacheInitialized() ) {
+        partitioned_hypergraph.changeNodePartFullUpdate(hn, from, to);
+      } else {
+        partitioned_hypergraph.changeNodePart(hn, from, to);
+      }
+    }
+  });
+
+  ASSERT(metrics::objective(partitioned_hypergraph, context.partition.objective) ==
+          metrics::objective(w_cycle_phg, context.partition.objective),
+          V(metrics::objective(partitioned_hypergraph, context.partition.objective)) <<
+          V(metrics::objective(w_cycle_phg, context.partition.objective)));
+  ASSERT(metrics::imbalance(partitioned_hypergraph, context) ==
+          metrics::imbalance(w_cycle_phg, context),
+          V(metrics::imbalance(partitioned_hypergraph, context)) <<
+          V(metrics::imbalance(w_cycle_phg, context)));
+}
+
+static inline void partitionNLevelWCycle(const Hypergraph& hypergraph,
+                                         PartitionedHypergraph& partitioned_hypergraph,
+                                         const Context& context) {
+  // Compactify hypergraph since original hypergraph contains information
+  // how to uncontract the hypergraph further after the w-cycle
+  auto compactification = HypergraphFactory::compactify(
+    TBBNumaArena::GLOBAL_TASK_GROUP, hypergraph);
+  Hypergraph& compactified_hg = compactification.first;
+  auto& hn_mapping = compactification.second;
+
+  parallel::scalable_vector<PartitionID> part_ids(
+    compactified_hg.initialNumNodes(), kInvalidPartition);
+
+  // Store partition and assign it as community ids in order to
+  // restrict contractions in w-cycle to partition ids
+  hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
+    const HypernodeID compactified_hn = hn_mapping[hn];
+    ASSERT(compactified_hn < ID(part_ids.size()));
+    part_ids[compactified_hn] = partitioned_hypergraph.partID(hn);
+  });
+  compactified_hg.setCommunityIDs(part_ids);
+
+  // W-Cycle Multilevel Partitioning
+  PartitionedHypergraph w_cycle_phg = multilevel::partition(
+    compactified_hg, context, true, TBBNumaArena::GLOBAL_TASK_GROUP, false, true /* wcycle */);
+
+  // Apply Partition of W-Cycle
+  partitioned_hypergraph.doParallelForAllNodes([&](const HypernodeID hn) {
+    const HypernodeID compactified_hn = hn_mapping[hn];
+    ASSERT(w_cycle_phg.nodeIsEnabled(compactified_hn));
+    const PartitionID from = partitioned_hypergraph.partID(hn);
+    const PartitionID to = w_cycle_phg.partID(compactified_hn);
+    if ( from != to ) {
+      ASSERT(to != kInvalidPartition);
+      if ( partitioned_hypergraph.isGainCacheInitialized() ) {
+        partitioned_hypergraph.changeNodePartFullUpdate(hn, from, to);
+      } else {
+        partitioned_hypergraph.changeNodePart(hn, from, to);
+      }
+    }
+  });
+
+  ASSERT(metrics::objective(partitioned_hypergraph, context.partition.objective) ==
+          metrics::objective(w_cycle_phg, context.partition.objective),
+          V(metrics::objective(partitioned_hypergraph, context.partition.objective)) <<
+          V(metrics::objective(w_cycle_phg, context.partition.objective)));
+  ASSERT(metrics::imbalance(partitioned_hypergraph, context) ==
+          metrics::imbalance(w_cycle_phg, context),
+          V(metrics::imbalance(partitioned_hypergraph, context)) <<
+          V(metrics::imbalance(w_cycle_phg, context)));
+}
+
+} // namsepace
+
 static inline void partitionWCycle(Hypergraph& hypergraph,
                                    PartitionedHypergraph& partitioned_hypergraph,
                                    Context& context) {
@@ -379,42 +481,21 @@ static inline void partitionWCycle(Hypergraph& hypergraph,
     utils::Stats::instance().disable();
   }
 
-  parallel::scalable_vector<PartitionID> part_ids(
-    hypergraph.initialNumNodes(), kInvalidPartition);
-
-  // Store partition and assign it as community ids in order to
-  // restrict contractions in w-cycle to partition ids
-  hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
-    part_ids[hn] = partitioned_hypergraph.partID(hn);
-  });
-  hypergraph.setCommunityIDs(part_ids);
-
-  // W-Cycle Multilevel Partitioning
   ASSERT(!context.partition.w_cycle_thresholds.empty());
   const HypernodeID w_cycle_threshold = context.partition.w_cycle_thresholds.back();
   context.partition.w_cycle_thresholds.pop_back();
   io::printWCycleBanner(context);
-  PartitionedHypergraph w_cycle_phg = multilevel::partition(
-    hypergraph, context, true, TBBNumaArena::GLOBAL_TASK_GROUP, false, true /* wcycle */);
+
+  #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
+  partitionNLevelWCycle(hypergraph, partitioned_hypergraph, context);
+  #else
+  partitionMultilevelWCycle(hypergraph, partitioned_hypergraph, context);
+  #endif
+
   while ( !context.partition.w_cycle_thresholds.empty() &&
           w_cycle_threshold >= context.partition.w_cycle_thresholds.back() ) {
     context.partition.w_cycle_thresholds.pop_back();
   }
-
-  // Apply Partition of W-Cycle
-  partitioned_hypergraph.doParallelForAllNodes([&](const HypernodeID hn) {
-    ASSERT(w_cycle_phg.nodeIsEnabled(hn));
-    const PartitionID from = partitioned_hypergraph.partID(hn);
-    const PartitionID to = w_cycle_phg.partID(hn);
-    if ( from != to ) {
-      ASSERT(to != kInvalidPartition);
-      if ( partitioned_hypergraph.isGainCacheInitialized() ) {
-        partitioned_hypergraph.changeNodePartFullUpdate(hn, from, to);
-      } else {
-        partitioned_hypergraph.changeNodePart(hn, from, to);
-      }
-    }
-  });
 
   // Activate Memory Pool again
   if ( memory_pool_active ) {

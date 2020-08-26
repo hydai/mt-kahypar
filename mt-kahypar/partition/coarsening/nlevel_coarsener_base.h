@@ -157,6 +157,8 @@ class NLevelCoarsenerBase {
 
     size_t num_batches = 0;
     size_t total_batches_size = 0;
+    HypernodeID current_num_nodes = _compactified_hg.initialNumNodes();
+    Context w_cycle_context(_context);
     while ( !_hierarchy.empty() ) {
       BatchVector& batches = _hierarchy.back();
 
@@ -187,6 +189,15 @@ class NLevelCoarsenerBase {
           uncontraction_progress.setObjective(current_metrics.getMetric(
             _context.partition.mode, _context.partition.objective));
           uncontraction_progress += batch.size();
+          current_num_nodes += batch.size();
+
+          // Perform W-Cycle
+          if ( _top_level && !w_cycle_context.partition.w_cycle_thresholds.empty() &&
+              current_num_nodes >= ID(w_cycle_context.partition.w_cycle_thresholds.back()) ) {
+            if ( uncontraction_progress.is_enabled() ) std::cout << std::endl;
+            multilevel::partitionWCycle(_phg.hypergraph(), _phg, w_cycle_context);
+            current_metrics = computeMetrics(_phg);
+          }
         }
         batches.pop_back();
       }
