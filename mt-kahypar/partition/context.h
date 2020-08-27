@@ -310,7 +310,8 @@ inline std::ostream & operator<< (std::ostream& str, const InitialPartitioningPa
       str << "  Min Adaptive IP Runs:               " << params.min_adaptive_ip_runs << std::endl;
     }
     str << "  Use Adaptive Epsilon:               " << std::boolalpha << params.use_adaptive_epsilon << std::endl;
-    str << "  Perform FM Refinement:              " << std::boolalpha << params.perform_fm_refinement << std::endl;
+    str << "  Perform Refinement On Best:         " << std::boolalpha << params.perform_refinement_on_best_partitions << std::endl;
+    str << "  Fm Refinement Rounds:               " << params.fm_refinment_rounds << std::endl;
     str << "  Maximum Iterations of LP IP:        " << params.lp_maximum_iterations << std::endl;
     str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
     str << "\nInitial Partitioning ";
