@@ -25,6 +25,9 @@
 #include "tbb/parallel_invoke.h"
 
 #include "tests/datastructures/hypergraph_fixtures.h"
+#include "mt-kahypar/partition/context.h"
+#include "mt-kahypar/partition/registries/register_coarsening_algorithms.h"
+#include "mt-kahypar/partition/multilevel.h"
 #include "mt-kahypar/utils/timer.h"
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/partition/initial_partitioning/flat/random_initial_partitioner.h"
