@@ -137,7 +137,7 @@ namespace mt_kahypar {
       }
     }
 
-    if (context.refinement.fm.revert_parallel) {
+    if (context.getRefinementParameters().fm.revert_parallel) {
       return revertToBestPrefixParallel(phg, sharedData, partWeights, maxPartWeights);
     } else {
       return revertToBestPrefixSequential(phg, sharedData, partWeights, maxPartWeights);
@@ -467,7 +467,7 @@ namespace mt_kahypar {
   }
 
   void GlobalRollback::resetStoredMoveIDs() {
-    if (context.refinement.fm.revert_parallel) {
+    if (context.getRefinementParameters().fm.revert_parallel) {
       tbb::parallel_invoke(
               [&] {
                 tbb::parallel_for(0UL, last_move_out.size(),
@@ -482,7 +482,7 @@ namespace mt_kahypar {
   }
 
   void GlobalRollback::setRemainingOriginalPins(PartitionedHypergraph& phg) {
-    if (phg.hypergraph().maxEdgeSize() > 2 && context.refinement.fm.revert_parallel) {
+    if (phg.hypergraph().maxEdgeSize() > 2 && context.getRefinementParameters().fm.revert_parallel) {
       phg.doParallelForAllEdges([&](const HyperedgeID& he) {
         if (phg.edgeSize(he) > 2) {
           const HyperedgeID he_local = phg.nonGraphEdgeID(he);

@@ -44,6 +44,14 @@ struct ThreadQueue {
     front.store(0);
   }
 
+  bool empty() const {
+    return front.load(std::memory_order_relaxed) >= elements.size();
+  }
+
+  size_t size() const {
+    return empty() ? 0 : ( elements.size() - front.load(std::memory_order_relaxed) );
+  }
+
   bool try_pop(T& dest) {
     size_t slot = front.fetch_add(1, std::memory_order_acq_rel);
     if (slot < elements.size()) {
@@ -63,7 +71,7 @@ struct WorkContainer {
   size_t unsafe_size() const {
     size_t sz = 0;
     for (const ThreadQueue<T>& q : tls_queues) {
-      sz += q.elements.size() - q.front.load(std::memory_order_relaxed);
+      sz += q.size();
     }
     return sz;
   }

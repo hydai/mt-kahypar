@@ -192,10 +192,10 @@ class InitialPartitioningDataContainer {
       if ( _context.partition.k == 2 && !disable_fm ) {
         // In case of a bisection we instantiate the 2-way FM refiner
         _twoway_fm = std::make_unique<SequentialTwoWayFmRefiner>(_partitioned_hypergraph, _context);
-      } else if ( _context.refinement.label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
+      } else if ( _context.getRefinementParameters().label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
         // In case of a direct-kway initial partition we instantiate the LP refiner
         _label_propagation = LabelPropagationFactory::getInstance().createObject(
-          _context.refinement.label_propagation.algorithm, hypergraph, _context, task_group_id);
+          _context.getRefinementParameters().label_propagation.algorithm, hypergraph, _context, task_group_id);
       }
     }
 
@@ -350,6 +350,7 @@ class InitialPartitioningDataContainer {
     // Setup Label Propagation IRefiner Config for Initial Partitioning
     _context.refinement = _context.initial_partitioning.refinement;
     _context.refinement.label_propagation.execute_sequential = true;
+    _context.localized_refinement.label_propagation.execute_sequential = true;
   }
 
   InitialPartitioningDataContainer(const InitialPartitioningDataContainer&) = delete;

@@ -85,7 +85,7 @@ class LabelPropagationRefiner final : public IRefiner {
       // We perform a move if it either improves the solution quality or, in case of a
       // zero gain move, the balance of the solution.
       const bool positive_gain = best_move.gain < 0;
-      const bool zero_gain_move = (_context.refinement.label_propagation.rebalancing &&
+      const bool zero_gain_move = (_context.getRefinementParameters().label_propagation.rebalancing &&
                                     best_move.gain == 0 &&
                                     hypergraph.partWeight(best_move.from) - 1 >
                                     hypergraph.partWeight(best_move.to) + 1 &&
@@ -111,7 +111,7 @@ class LabelPropagationRefiner final : public IRefiner {
             // Set all neighbors of the vertex to active
             for (const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
               if ( hypergraph.edgeSize(he) <=
-                    ID(_context.refinement.label_propagation.hyperedge_size_activation_threshold) ) {
+                    ID(_context.getRefinementParameters().label_propagation.hyperedge_size_activation_threshold) ) {
                 if ( !_visited_he[he] ) {
                   for (const HypernodeID& pin : hypergraph.pins(he)) {
                     if ( _next_active.compare_and_set_to_true(pin) ) {

@@ -58,10 +58,10 @@ namespace mt_kahypar {
           HEAVY_REFINEMENT_ASSERT(hypergraph.checkTrackedPartitionInformation());
           HEAVY_REFINEMENT_ASSERT(current_metric + delta ==
                                   metrics::objective(hypergraph, _context.partition.objective,
-                                                     !_context.refinement.label_propagation.execute_sequential),
+                                                     !_context.getRefinementParameters().label_propagation.execute_sequential),
                                   V(current_metric) << V(delta) <<
                                                     V(metrics::objective(hypergraph, _context.partition.objective,
-                                                                         _context.refinement.label_propagation.execute_sequential)));
+                                                                         _context.getRefinementParameters().label_propagation.execute_sequential)));
 
           best_metrics.updateMetric(current_metric + delta, kahypar::Mode::direct_kway, _context.partition.objective);
           utils::Stats::instance().update_stat("lp_improvement", std::abs(delta));
@@ -72,7 +72,7 @@ namespace mt_kahypar {
   template <template <typename> class GainPolicy>
   void LabelPropagationRefiner<GainPolicy>::labelPropagation(PartitionedHypergraph& hypergraph) {
     NextActiveNodes next_active_nodes;
-    for (size_t i = 0; i < _context.refinement.label_propagation.maximum_iterations; ++i) {
+    for (size_t i = 0; i < _context.getRefinementParameters().label_propagation.maximum_iterations; ++i) {
       DBG << "Starting Label Propagation Round" << i;
 
       utils::Timer::instance().start_timer(
@@ -82,7 +82,7 @@ namespace mt_kahypar {
         labelPropagationRound(hypergraph, next_active_nodes);
       }
 
-      if ( _context.refinement.label_propagation.execute_sequential ) {
+      if ( _context.getRefinementParameters().label_propagation.execute_sequential ) {
         _active_nodes = next_active_nodes.copy_sequential();
         next_active_nodes.clear_sequential();
       } else {
@@ -117,7 +117,7 @@ namespace mt_kahypar {
 
     // Shuffle Vector
     bool converged = true;
-    if ( _context.refinement.label_propagation.execute_sequential ) {
+    if ( _context.getRefinementParameters().label_propagation.execute_sequential ) {
       utils::Randomize::instance().shuffleVector(
               _active_nodes, 0UL, _active_nodes.size(), sched_getcpu());
 
@@ -144,10 +144,10 @@ namespace mt_kahypar {
     ActiveNodes tmp_active_nodes;
     _active_nodes = std::move(tmp_active_nodes);
 
-    if ( _context.refinement.label_propagation.execute_sequential ) {
+    if ( _context.getRefinementParameters().label_propagation.execute_sequential ) {
       // Setup active nodes sequential
       for ( const HypernodeID hn : hypergraph.nodes() ) {
-        if ( _context.refinement.label_propagation.rebalancing || hypergraph.isBorderNode(hn) ) {
+        if ( _context.getRefinementParameters().label_propagation.rebalancing || hypergraph.isBorderNode(hn) ) {
           _active_nodes.push_back(hn);
         }
       }
@@ -157,7 +157,7 @@ namespace mt_kahypar {
       NextActiveNodes tmp_active_nodes;
 
       hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
-        if ( _context.refinement.label_propagation.rebalancing || hypergraph.isBorderNode(hn) ) {
+        if ( _context.getRefinementParameters().label_propagation.rebalancing || hypergraph.isBorderNode(hn) ) {
           tmp_active_nodes.stream(hn);
         }
       });
@@ -173,23 +173,23 @@ namespace mt_kahypar {
     ActiveNodes tmp_active_nodes;
     _active_nodes = std::move(tmp_active_nodes);
 
-    if ( _context.refinement.label_propagation.execute_sequential ) {
+    if ( _context.getRefinementParameters().label_propagation.execute_sequential ) {
       // Setup active nodes sequential
       if ( refinement_nodes.empty() ) {
         for ( const HypernodeID hn : hypergraph.nodes() ) {
-          if ( _context.refinement.label_propagation.rebalancing ||
+          if ( _context.getRefinementParameters().label_propagation.rebalancing ||
                hypergraph.isBorderNode(hn) ) {
             _active_nodes.push_back(hn);
           }
         }
       } else {
         for ( const Memento& memento : refinement_nodes ) {
-          if ( ( _context.refinement.label_propagation.rebalancing ||
+          if ( ( _context.getRefinementParameters().label_propagation.rebalancing ||
                  hypergraph.isBorderNode(memento.u) ) &&
                _next_active.compare_and_set_to_true(memento.u) ) {
             _active_nodes.push_back(memento.u);
           }
-          if ( ( _context.refinement.label_propagation.rebalancing ||
+          if ( ( _context.getRefinementParameters().label_propagation.rebalancing ||
                  hypergraph.isBorderNode(memento.v) ) &&
                _next_active.compare_and_set_to_true(memento.v) ) {
             _active_nodes.push_back(memento.v);
@@ -209,7 +209,7 @@ namespace mt_kahypar {
 
       if ( refinement_nodes.empty() ) {
         hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
-          if ( _context.refinement.label_propagation.rebalancing ||
+          if ( _context.getRefinementParameters().label_propagation.rebalancing ||
                hypergraph.isBorderNode(hn) ) {
             add_vertex(hn);
           }
@@ -217,11 +217,11 @@ namespace mt_kahypar {
       } else {
         tbb::parallel_for(0UL, refinement_nodes.size(), [&](const size_t i) {
           const Memento& memento = refinement_nodes[i];
-          if ( _context.refinement.label_propagation.rebalancing ||
+          if ( _context.getRefinementParameters().label_propagation.rebalancing ||
                hypergraph.isBorderNode(memento.u) ) {
             add_vertex(memento.u);
           }
-          if ( _context.refinement.label_propagation.rebalancing ||
+          if ( _context.getRefinementParameters().label_propagation.rebalancing ||
                hypergraph.isBorderNode(memento.v) ) {
             add_vertex(memento.v);
           }

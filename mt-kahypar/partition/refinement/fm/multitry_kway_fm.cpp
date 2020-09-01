@@ -17,14 +17,14 @@ namespace mt_kahypar {
     Gain overall_improvement = 0;
     size_t consecutive_rounds_with_too_little_improvement = 0;
     enable_light_fm = false;
-    sharedData.release_nodes = context.refinement.fm.release_nodes;
-    sharedData.perform_moves_global = context.refinement.fm.perform_moves_global;
+    sharedData.release_nodes = context.getRefinementParameters().fm.release_nodes;
+    sharedData.perform_moves_global = context.getRefinementParameters().fm.perform_moves_global;
     double current_time_limit = time_limit;
 
     HighResClockTimepoint fm_start = std::chrono::high_resolution_clock::now();
     utils::Timer& timer = utils::Timer::instance();
 
-    for (size_t round = 0; round < context.refinement.fm.multitry_rounds; ++round) { // global multi try rounds
+    for (size_t round = 0; round < context.getRefinementParameters().fm.multitry_rounds; ++round) { // global multi try rounds
       timer.start_timer("collect_border_nodes", "Collect Border Nodes");
 
       roundInitialization(phg, batch);
@@ -36,7 +36,7 @@ namespace mt_kahypar {
       vec<HypernodeWeight> initialPartWeights(size_t(sharedData.numParts));
       for (PartitionID i = 0; i < sharedData.numParts; ++i) initialPartWeights[i] = phg.partWeight(i);
 
-      if (context.refinement.fm.algorithm == FMAlgorithm::fm_multitry) {
+      if (context.getRefinementParameters().fm.algorithm == FMAlgorithm::fm_multitry) {
         sharedData.finishedTasks.store(0, std::memory_order_relaxed);
         auto task = [&](const int , const int task_id, const int ) {
           LocalizedKWayFM& fm = ets_fm.local();
@@ -47,7 +47,7 @@ namespace mt_kahypar {
           sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
         };
         TBBNumaArena::instance().execute_task_on_each_thread(taskGroupID, task);
-      } else if (context.refinement.fm.algorithm == FMAlgorithm::fm_boundary){
+      } else if (context.getRefinementParameters().fm.algorithm == FMAlgorithm::fm_boundary){
         LocalizedKWayFM& fm = ets_fm.local();
         fm.findMovesUsingFullBoundary(phg, sharedData);
       }
@@ -66,7 +66,7 @@ namespace mt_kahypar {
 
       timer.stop_timer("rollback");
 
-      if (roundImprovementFraction < context.refinement.fm.min_improvement) {
+      if (roundImprovementFraction < context.getRefinementParameters().fm.min_improvement) {
         consecutive_rounds_with_too_little_improvement++;
       } else {
         consecutive_rounds_with_too_little_improvement = 0;
@@ -86,7 +86,7 @@ namespace mt_kahypar {
       // the gain cache inside the partitioned hypergraph becomes expensive.
       // After the FM reaches the time limit the first time, we switch to a light FM variant. Here, we do not
       // release vertices that are within a local PQ at the end of a localized search. If the time limit is
-      // reached a second time we immediatly abort FM refinement.
+      // reached a second time we immediatly abort FM getRefinementParameters().
       if ( elapsed_time > current_time_limit ) {
         if ( !enable_light_fm ) {
           DBG << RED << "Multitry FM reached time limit => switch to Light FM Configuration" << END;
@@ -151,7 +151,7 @@ namespace mt_kahypar {
     }
 
     // shuffle task queue if requested
-    if (context.refinement.fm.shuffle) {
+    if (context.getRefinementParameters().fm.shuffle) {
       sharedData.refinementNodes.shuffle();
     }
 
@@ -172,7 +172,7 @@ namespace mt_kahypar {
       timer.stop_timer("init_gain_info");
     }
 
-    if ( context.refinement.fm.revert_parallel ) {
+    if ( context.getRefinementParameters().fm.revert_parallel ) {
       timer.start_timer("set_remaining_original_pins", "Set remaining original pins");
       globalRollback.setRemainingOriginalPins(phg);
       timer.stop_timer("set_remaining_original_pins");

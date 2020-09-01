@@ -60,7 +60,7 @@ namespace mt_kahypar {
 
     // Create n-level batch uncontraction hierarchy
     utils::Timer::instance().start_timer("create_batch_uncontraction_hierarchy", "Create n-Level Hierarchy");
-    _hierarchy = _hg.createBatchUncontractionHierarchy(_context.refinement.max_batch_size);
+    _hierarchy = _hg.createBatchUncontractionHierarchy(_context.getRefinementParameters().max_batch_size);
     ASSERT(_removed_hyperedges_batches.size() == _hierarchy.size() - 1);
     utils::Timer::instance().stop_timer("create_batch_uncontraction_hierarchy");
 
@@ -191,7 +191,7 @@ namespace mt_kahypar {
       _phg.setOnlyNodePart(hn, block_id);
     });
     _phg.initializePartition(_task_group_id);
-    if ( _context.refinement.fm.algorithm != FMAlgorithm::do_nothing ) {
+    if ( _context.getRefinementParameters().fm.algorithm != FMAlgorithm::do_nothing ) {
       _phg.initializeGainInformation();
     }
 
@@ -232,6 +232,7 @@ namespace mt_kahypar {
       BatchVector& batches = _hierarchy.back();
 
       // Uncontract all batches of a specific version of the hypergraph
+      _context.setRefinementType(RefinementType::localized);
       while ( !batches.empty() ) {
         const Batch& batch = batches.back();
         if ( batch.size() > 0 ) {
@@ -268,9 +269,18 @@ namespace mt_kahypar {
         _phg.restoreSinglePinAndParallelNets(_removed_hyperedges_batches.back());
         _removed_hyperedges_batches.pop_back();
         utils::Timer::instance().stop_timer("restore_single_pin_and_parallel_nets", force_measure_timings);
+
+        // Perform top level refinement
+        _context.setRefinementType(RefinementType::global);
+        refine(_phg, {}, label_propagation, fm, current_metrics, force_measure_timings);
       }
       _hierarchy.pop_back();
     }
+
+    // Perform top level refinement
+    _context.setRefinementType(RefinementType::global);
+    refine(_phg, {}, label_propagation, fm, current_metrics, force_measure_timings);
+    _context.setRefinementType(RefinementType::localized);
 
     if ( is_timer_disabled ) {
       utils::Timer::instance().enable();
@@ -395,18 +405,17 @@ namespace mt_kahypar {
     }
 
     bool improvement_found = true;
+    const RefinementParameters& refinement_context = _context.getRefinementParameters();
     while( improvement_found ) {
       improvement_found = false;
 
-      if ( label_propagation &&
-           _context.refinement.label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
+      if ( label_propagation && refinement_context.label_propagation.algorithm != LabelPropagationAlgorithm::do_nothing ) {
         utils::Timer::instance().start_timer("label_propagation", "Label Propagation", false, force_measure_timings);
         improvement_found |= label_propagation->refine(partitioned_hypergraph, batch, current_metrics, std::numeric_limits<double>::max());
         utils::Timer::instance().stop_timer("label_propagation", force_measure_timings);
       }
 
-      if ( fm &&
-           _context.refinement.fm.algorithm != FMAlgorithm::do_nothing ) {
+      if ( fm && refinement_context.fm.algorithm != FMAlgorithm::do_nothing ) {
         utils::Timer::instance().start_timer("fm", "FM", false, force_measure_timings);
         improvement_found |= fm->refine(partitioned_hypergraph, batch, current_metrics, std::numeric_limits<double>::max());
         utils::Timer::instance().stop_timer("fm", force_measure_timings);
@@ -418,7 +427,7 @@ namespace mt_kahypar {
                                << "does not match the metric updated by the refiners" << V(current_metrics.km1));
       }
 
-      if ( !_context.refinement.refine_until_no_improvement ) {
+      if ( !refinement_context.refine_until_no_improvement ) {
         break;
       }
     }

@@ -8,7 +8,7 @@ namespace mt_kahypar {
 
     thisSearch = ++sharedData.nodeTracker.highestActiveSearchID;
 
-    const size_t nSeeds = context.refinement.fm.num_seed_nodes;
+    const size_t nSeeds = context.getRefinementParameters().fm.num_seed_nodes;
     HypernodeID seedNode;
     while (localData.runStats.pushes < nSeeds && sharedData.refinementNodes.try_pop(seedNode, taskID)) {
       if (insertPQ(phg, seedNode, sharedData)) {
@@ -20,7 +20,7 @@ namespace mt_kahypar {
     }
 
     if (localData.runStats.pushes > 0) {
-      if (!context.refinement.fm.perform_moves_global
+      if (!context.getRefinementParameters().fm.perform_moves_global
           && deltaPhg.combinedMemoryConsumption() > sharedData.deltaMemoryLimitPerThread) {
         sharedData.deltaExceededMemoryConstraints = true;
       }
@@ -29,7 +29,7 @@ namespace mt_kahypar {
         deltaPhg.dropMemory();
       }
 
-      if (context.refinement.fm.perform_moves_global || sharedData.deltaExceededMemoryConstraints) {
+      if (context.getRefinementParameters().fm.perform_moves_global || sharedData.deltaExceededMemoryConstraints) {
         internalFindMovesOnGlobalHypergraph(phg, sharedData);
       } else {
         deltaPhg.clear();
@@ -289,8 +289,8 @@ namespace mt_kahypar {
     // release all nodes that were not moved
     // reinsert into task queue only if we're doing multitry and at least one node was moved
     // unless a node was moved, only seed nodes are in the pqs
-    const bool release = context.refinement.fm.release_nodes
-                         && context.refinement.fm.algorithm == FMAlgorithm::fm_multitry
+    const bool release = context.getRefinementParameters().fm.release_nodes
+                         && context.getRefinementParameters().fm.algorithm == FMAlgorithm::fm_multitry
                          && localData.runStats.moves > 0;
     const bool reinsert_seeds = bestImprovementIndex > 0;
 

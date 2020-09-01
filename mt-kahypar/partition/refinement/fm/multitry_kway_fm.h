@@ -48,7 +48,7 @@ public:
     ets_fm([&] {
       return constructLocalizedKWayFMSearch();
     }) {
-    if (context.refinement.fm.obey_minimal_parallelism) {
+    if (context.getRefinementParameters().fm.obey_minimal_parallelism) {
       sharedData.finishedTasksLimit = std::min(8UL, context.shared_memory.num_threads);
     }
   }

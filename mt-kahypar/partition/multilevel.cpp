@@ -59,6 +59,7 @@ namespace mt_kahypar::multilevel {
 
       // Switch refinement context from IP to main
       _ip_context.refinement = _context.initial_partitioning.refinement;
+      _ip_context.localized_refinement = _context.initial_partitioning.localized_refinement;
     }
 
     tbb::task* execute() override {
@@ -95,11 +96,11 @@ namespace mt_kahypar::multilevel {
       utils::Timer::instance().start_timer("refinement", "Refinement");
       std::unique_ptr<IRefiner> label_propagation =
               LabelPropagationFactory::getInstance().createObject(
-                      _context.refinement.label_propagation.algorithm,
+                      _context.getRefinementParameters().label_propagation.algorithm,
                       _hg, _context, _task_group_id);
       std::unique_ptr<IRefiner> fm =
               FMFactory::getInstance().createObject(
-                      _context.refinement.fm.algorithm,
+                      _context.getRefinementParameters().fm.algorithm,
                       _hg, _context, _task_group_id);
 
       _partitioned_hg = _coarsener->uncoarsen(label_propagation, fm);

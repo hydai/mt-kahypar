@@ -145,7 +145,6 @@ struct RefinementParameters {
   FMParameters fm;
   bool refine_until_no_improvement = false;
   size_t max_batch_size = std::numeric_limits<size_t>::max();
-  bool initialize_gain_cache = false;
 };
 
 std::ostream & operator<< (std::ostream& str, const RefinementParameters& params);
@@ -171,6 +170,7 @@ struct InitialPartitioningParameters {
 
   InitialPartitioningMode mode = InitialPartitioningMode::UNDEFINED;
   RefinementParameters refinement = { };
+  RefinementParameters localized_refinement = { };
   std::vector<bool> enabled_ip_algos;
   size_t runs = 1;
   bool use_adaptive_ip_runs = false;
@@ -200,17 +200,31 @@ class Context {
   CoarseningParameters coarsening { };
   InitialPartitioningParameters initial_partitioning { };
   RefinementParameters refinement { };
+  RefinementParameters localized_refinement { };
   SparsificationParameters sparsification { };
   SharedMemoryParameters shared_memory { };
   kahypar::ContextType type = kahypar::ContextType::main;
 
   std::string algorithm_name = "Mt-KaHyPar";
+  mutable RefinementType refinement_type = RefinementType::global;
 
   Context() { }
 
   bool useSparsification() const ;
 
   bool isMainRecursiveBisection() const ;
+
+  void setRefinementType(const RefinementType& type) const {
+    refinement_type = type;
+  }
+
+  const RefinementParameters& getRefinementParameters() const {
+    if ( refinement_type == RefinementType::global ) {
+      return refinement;
+    } else {
+      return localized_refinement;
+    }
+  }
 
   void setupPartWeights(const HypernodeWeight total_hypergraph_weight);
 

@@ -110,6 +110,11 @@ enum class FMAlgorithm : uint8_t {
   do_nothing
 };
 
+enum class RefinementType : uint8_t {
+  localized,
+  global
+};
+
 std::ostream & operator<< (std::ostream& os, const Type& type);
 
 std::ostream & operator<< (std::ostream& os, const Paradigm& paradigm);

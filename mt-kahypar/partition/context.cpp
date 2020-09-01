@@ -126,7 +126,6 @@ namespace mt_kahypar {
     str << "  Refine Until No Improvement:        " << std::boolalpha << params.refine_until_no_improvement << std::endl;
 #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
     str << "  Maximum Batch Size:                 " << params.max_batch_size << std::endl;
-    str << "  Initialize Gain Cache:              " << std::boolalpha << params.initialize_gain_cache << std::endl;
 #endif
     str << std::endl << params.label_propagation;
     str << "\n" << params.fm;
@@ -166,6 +165,10 @@ namespace mt_kahypar {
     str << "  Initial Block Size of LP IP:        " << params.lp_initial_block_size << std::endl;
     str << "\nInitial Partitioning ";
     str << params.refinement << std::endl;
+#ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
+    str << "\nInitial Partitioning Localized ";
+    str << params.localized_refinement << std::endl;
+#endif
     return str;
   }
 
@@ -338,10 +341,13 @@ namespace mt_kahypar {
         << context.initial_partitioning
         << "-------------------------------------------------------------------------------\n"
         << context.refinement
+        #ifdef KAHYPAR_USE_N_LEVEL_PARADIGM
+        << "\nLocalized " << context.localized_refinement
+        #endif
         << "-------------------------------------------------------------------------------\n"
         #ifdef KAHYPAR_ENABLE_EXPERIMENTAL_FEATURES
         << context.sparsification
-      << "-------------------------------------------------------------------------------\n"
+        << "-------------------------------------------------------------------------------\n"
         #endif
         << context.shared_memory
         << "-------------------------------------------------------------------------------";

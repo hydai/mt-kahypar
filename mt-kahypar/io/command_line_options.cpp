@@ -227,14 +227,19 @@ namespace mt_kahypar {
                               &context.initial_partitioning.refinement.refine_until_no_improvement))->value_name(
                      "<bool>")->default_value(false),
              "Executes all refinement algorithms as long as they find an improvement on the current partition.")
+            ((initial_partitioning ? "i-r-localized-refine-until-no-improvement" : "r-localized-refine-until-no-improvement"),
+             po::value<bool>((!initial_partitioning ? &context.localized_refinement.refine_until_no_improvement :
+                              &context.initial_partitioning.localized_refinement.refine_until_no_improvement))->value_name(
+                     "<bool>")->default_value(false),
+             "Executes all refinement algorithms as long as they find an improvement on the current partition.")
             (( initial_partitioning ? "i-r-max-batch-size" : "r-max-batch-size"),
              po::value<size_t>((!initial_partitioning ? &context.refinement.max_batch_size :
                                 &context.initial_partitioning.refinement.max_batch_size))->value_name("<size_t>")->default_value(1000),
              "Maximum size of an uncontraction batch.")
-            (( initial_partitioning ? "i-r-initialize-gain-cache" : "r-initialize-gain-cache"),
-             po::value<bool>((!initial_partitioning ? &context.refinement.initialize_gain_cache :
-                              &context.initial_partitioning.refinement.initialize_gain_cache))->value_name("<bool>")->default_value(false),
-             "Initializes the gain cache before uncontraction.")
+            (( initial_partitioning ? "i-r-localized-max-batch-size" : "r-localized-max-batch-size"),
+             po::value<size_t>((!initial_partitioning ? &context.localized_refinement.max_batch_size :
+                                &context.initial_partitioning.localized_refinement.max_batch_size))->value_name("<size_t>")->default_value(1000),
+             "Maximum size of an uncontraction batch.")
             ((initial_partitioning ? "i-r-lp-type" : "r-lp-type"),
              po::value<std::string>()->value_name("<string>")->notifier(
                      [&, initial_partitioning](const std::string& type) {
@@ -250,9 +255,29 @@ namespace mt_kahypar {
              "- label_propagation_km1\n"
              "- label_propagation_cut\n"
              "- do_nothing")
+            ((initial_partitioning ? "i-r-localized-lp-type" : "r-localized-lp-type"),
+             po::value<std::string>()->value_name("<string>")->notifier(
+                     [&, initial_partitioning](const std::string& type) {
+                       if (initial_partitioning) {
+                         context.initial_partitioning.localized_refinement.label_propagation.algorithm =
+                                 labelPropagationAlgorithmFromString(type);
+                       } else {
+                         context.localized_refinement.label_propagation.algorithm =
+                                 labelPropagationAlgorithmFromString(type);
+                       }
+                     })->default_value("label_propagation_km1"),
+             "Label Propagation Algorithm:\n"
+             "- label_propagation_km1\n"
+             "- label_propagation_cut\n"
+             "- do_nothing")
             ((initial_partitioning ? "i-r-lp-maximum-iterations" : "r-lp-maximum-iterations"),
              po::value<size_t>((!initial_partitioning ? &context.refinement.label_propagation.maximum_iterations :
                                 &context.initial_partitioning.refinement.label_propagation.maximum_iterations))->value_name(
+                     "<size_t>")->default_value(5),
+             "Maximum number of label propagation rounds")
+            ((initial_partitioning ? "i-r-localized-lp-maximum-iterations" : "r-localized-lp-maximum-iterations"),
+             po::value<size_t>((!initial_partitioning ? &context.localized_refinement.label_propagation.maximum_iterations :
+                                &context.initial_partitioning.localized_refinement.label_propagation.maximum_iterations))->value_name(
                      "<size_t>")->default_value(5),
              "Maximum number of label propagation rounds")
             ((initial_partitioning ? "i-r-lp-rebalancing" : "r-lp-rebalancing"),
@@ -260,20 +285,45 @@ namespace mt_kahypar {
                               &context.initial_partitioning.refinement.label_propagation.rebalancing))->value_name(
                      "<bool>")->default_value(true),
              "If true, then zero gain moves are only performed if they improve the balance of the solution (only in label propagation)")
+            ((initial_partitioning ? "i-r-localized-lp-rebalancing" : "r-localized-lp-rebalancing"),
+             po::value<bool>((!initial_partitioning ? &context.localized_refinement.label_propagation.rebalancing :
+                              &context.initial_partitioning.localized_refinement.label_propagation.rebalancing))->value_name(
+                     "<bool>")->default_value(true),
+             "If true, then zero gain moves are only performed if they improve the balance of the solution (only in label propagation)")
             ((initial_partitioning ? "i-r-lp-he-size-activation-threshold" : "r-lp-he-size-activation-threshold"),
              po::value<size_t>(
-                     (!initial_partitioning ? &context.refinement.label_propagation.hyperedge_size_activation_threshold
-                                            :
+                     (!initial_partitioning ? &context.refinement.label_propagation.hyperedge_size_activation_threshold :
                       &context.initial_partitioning.refinement.label_propagation.hyperedge_size_activation_threshold))->value_name(
+                     "<size_t>")->default_value(100),
+             "LP refiner activates only neighbors of moved vertices that are part of hyperedges with a size less than this threshold")
+            ((initial_partitioning ? "i-r-localized-lp-he-size-activation-threshold" : "r-localized-lp-he-size-activation-threshold"),
+             po::value<size_t>(
+                     (!initial_partitioning ? &context.localized_refinement.label_propagation.hyperedge_size_activation_threshold :
+                      &context.initial_partitioning.localized_refinement.label_propagation.hyperedge_size_activation_threshold))->value_name(
                      "<size_t>")->default_value(100),
              "LP refiner activates only neighbors of moved vertices that are part of hyperedges with a size less than this threshold")
             ((initial_partitioning ? "i-r-fm-type" : "r-fm-type"),
              po::value<std::string>()->value_name("<string>")->notifier(
                      [&, initial_partitioning](const std::string& type) {
                        if (initial_partitioning) {
-                         context.initial_partitioning.refinement.fm.algorithm = fmAlgorithmFromString(type);
+                         context.initial_partitioning.refinement.fm.algorithm =
+                          fmAlgorithmFromString(type);
                        } else {
                          context.refinement.fm.algorithm = fmAlgorithmFromString(type);
+                       }
+                     })->default_value("fm_multitry"),
+             "FM Algorithm:\n"
+             "- fm_multitry\n"
+             "- fm_boundary\n"
+             "- do_nothing")
+            ((initial_partitioning ? "i-r-localized-fm-type" : "r-localized-fm-type"),
+             po::value<std::string>()->value_name("<string>")->notifier(
+                     [&, initial_partitioning](const std::string& type) {
+                       if (initial_partitioning) {
+                         context.initial_partitioning.localized_refinement.fm.algorithm =
+                          fmAlgorithmFromString(type);
+                       } else {
+                         context.localized_refinement.fm.algorithm = fmAlgorithmFromString(type);
                        }
                      })->default_value("fm_multitry"),
              "FM Algorithm:\n"
@@ -322,6 +372,51 @@ namespace mt_kahypar {
             ((initial_partitioning ? "i-r-fm-time-limit-factor" : "r-fm-time-limit-factor"),
              po::value<double>((initial_partitioning ? &context.initial_partitioning.refinement.fm.time_limit_factor :
                                 &context.refinement.fm.time_limit_factor))->value_name("<double>")->default_value(0.25),
+             "If the FM time exceeds time_limit := k * factor * coarsening_time, than the FM config is switched into a light version."
+             "If the FM refiner exceeds 2 * time_limit, than the current multitry FM run is aborted and the algorithm proceeds to"
+             "the next finer level.")
+            ((initial_partitioning ? "i-r-localized-fm-multitry-rounds" : "r-localized-fm-multitry-rounds"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.multitry_rounds :
+                                &context.localized_refinement.fm.multitry_rounds))->value_name("<size_t>")->default_value(10),
+             "Number of FM rounds within one level of the multilevel hierarchy.")
+            ((initial_partitioning ? "i-r-localized-fm-perform-moves-global" : "r-localized-fm-perform-moves-global"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.perform_moves_global :
+                              &context.localized_refinement.fm.perform_moves_global))->value_name("<bool>")->default_value(false),
+             "If true, then all moves performed during FM are immediately visible to other searches.\n"
+             "Otherwise, only move sequences that yield an improvement are applied to the global view of the partition.")
+            ((initial_partitioning ? "i-r-localized-fm-seed-nodes" : "r-localized-fm-seed-nodes"),
+             po::value<size_t>((initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.num_seed_nodes :
+                                &context.localized_refinement.fm.num_seed_nodes))->value_name("<size_t>")->default_value(25),
+             "Number of nodes to start the 'highly localized FM' with.")
+            (( initial_partitioning ? "i-r-localized-fm-revert-parallel" : "r-localized-fm-revert-parallel"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.revert_parallel :
+                              &context.localized_refinement.fm.revert_parallel))
+                              ->value_name("<bool>")->default_value(true),
+             "Perform gain and balance recalculation, and reverting to best prefix in parallel.")
+            ((initial_partitioning ? "i-r-localized-fm-rollback-balance-violation-factor"
+                                   : "r-localized-fm-rollback-balance-violation-factor"),
+             po::value<double>((initial_partitioning
+                                ? &context.initial_partitioning.localized_refinement.fm.rollback_balance_violation_factor :
+                                &context.localized_refinement.fm.rollback_balance_violation_factor))->value_name(
+                     "<double>")->default_value(1.25),
+             "Used to relax or disable the balance constraint during the rollback phase of parallel FM."
+             "Set to 0 for disabling. Set to a value > 1.0 to multiply epsilon with this value.")
+            ((initial_partitioning ? "i-r-localized-fm-min-improvement" : "r-localized-fm-min-improvement"),
+             po::value<double>((initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.min_improvement :
+                                &context.localized_refinement.fm.min_improvement))->value_name("<double>")->default_value(-1.0),
+             "Min improvement for FM (default disabled)")
+            ((initial_partitioning ? "i-r-localized-fm-release-nodes" : "r-localized-fm-release-nodes"),
+             po::value<bool>((initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.release_nodes :
+                              &context.localized_refinement.fm.release_nodes))->value_name("<bool>")->default_value(true),
+             "FM releases nodes that weren't moved, so they might be found by another search.")
+            ((initial_partitioning ? "i-r-localized-fm-obey-minimal-parallelism" : "r-localized-fm-obey-minimal-parallelism"),
+             po::value<bool>(
+                     (initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.obey_minimal_parallelism :
+                      &context.localized_refinement.fm.obey_minimal_parallelism))->value_name("<bool>")->default_value(true),
+             "If true, then parallel FM refinement stops if more than a certain number of threads are finished.")
+            ((initial_partitioning ? "i-r-localized-fm-time-limit-factor" : "r-localized-fm-time-limit-factor"),
+             po::value<double>((initial_partitioning ? &context.initial_partitioning.localized_refinement.fm.time_limit_factor :
+                                &context.localized_refinement.fm.time_limit_factor))->value_name("<double>")->default_value(0.25),
              "If the FM time exceeds time_limit := k * factor * coarsening_time, than the FM config is switched into a light version."
              "If the FM refiner exceeds 2 * time_limit, than the current multitry FM run is aborted and the algorithm proceeds to"
              "the next finer level.");

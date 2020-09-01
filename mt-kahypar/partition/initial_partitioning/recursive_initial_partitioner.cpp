@@ -146,11 +146,11 @@ namespace mt_kahypar {
       // Uncontraction
       std::unique_ptr<IRefiner> label_propagation =
               LabelPropagationFactory::getInstance().createObject(
-                      _result.context.refinement.label_propagation.algorithm, _result.hypergraph,
+                      _result.context.getRefinementParameters().label_propagation.algorithm, _result.hypergraph,
                       _result.context, _task_group_id);
       std::unique_ptr<IRefiner> fm =
               FMFactory::getInstance().createObject(
-                      _result.context.refinement.fm.algorithm, _result.hypergraph,
+                      _result.context.getRefinementParameters().fm.algorithm, _result.hypergraph,
                       _result.context, _task_group_id);
       _result.partitioned_hypergraph = _coarsener->uncoarsen(label_propagation, fm);
 

@@ -39,6 +39,8 @@ namespace mt_kahypar {
     context.setupPartWeights(hypergraph.totalWeight());
     context.setupContractionLimit(hypergraph.totalWeight());
     context.sanityCheck();
+    context.setRefinementType(context.partition.paradigm == Paradigm::nlevel ?
+      RefinementType::localized : RefinementType::global);
 
     // Setup enabled IP algorithms
     if ( context.initial_partitioning.enabled_ip_algos.size() > 0 &&

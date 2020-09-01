@@ -33,7 +33,7 @@ class GlobalRollback {
 public:
   explicit GlobalRollback(const Hypergraph& hg, const Context& context, PartitionID numParts) :
     context(context),
-    maxPartWeightScaling(context.refinement.fm.rollback_balance_violation_factor),
+    maxPartWeightScaling(context.getRefinementParameters().fm.rollback_balance_violation_factor),
     numParts(numParts),
     remaining_original_pins(),
     first_move_in(),
@@ -41,7 +41,7 @@ public:
 
     // In case we perform parallel rollback we need
     // some additional data structures
-    if ( context.refinement.fm.revert_parallel ) {
+    if ( context.getRefinementParameters().fm.revert_parallel ) {
       tbb::parallel_invoke([&] {
         remaining_original_pins.resize("Refinement", "remaining_original_pins",
           static_cast<size_t>(hg.numNonGraphEdges()) * numParts);
