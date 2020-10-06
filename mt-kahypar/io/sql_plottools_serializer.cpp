@@ -94,6 +94,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
         << " sparsification_jaccard_threshold=" << context.sparsification.jaccard_threshold
         << " sparsification_similiar_net_combiner_strategy=" << context.sparsification.similiar_net_combiner_strategy
         << " refine_until_no_improvement=" << std::boolalpha << context.refinement.refine_until_no_improvement
+        << " batch_size_policy=" << context.refinement.batch_size_policy
         << " max_batch_size=" << context.refinement.max_batch_size
         << " lp_algorithm=" << context.refinement.label_propagation.algorithm
         << " lp_maximum_iterations=" << context.refinement.label_propagation.maximum_iterations

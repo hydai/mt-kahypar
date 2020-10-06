@@ -154,6 +154,7 @@ struct RefinementParameters {
   FMParameters fm;
   NLevelGlobalFMParameters global_fm;
   bool refine_until_no_improvement = false;
+  BatchSizePolicy batch_size_policy = BatchSizePolicy::UNDEFINED;
   size_t max_batch_size = std::numeric_limits<size_t>::max();
 };
 

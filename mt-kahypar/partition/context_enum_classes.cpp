@@ -158,6 +158,16 @@ namespace mt_kahypar {
     return os << static_cast<uint8_t>(algo);
   }
 
+  std::ostream & operator<< (std::ostream& os, const BatchSizePolicy& policy) {
+    switch (policy) {
+      case BatchSizePolicy::constant: return os << "constant";
+      case BatchSizePolicy::sqrt: return os << "sqrt";
+      case BatchSizePolicy::UNDEFINED: return os << "UNDEFINED";
+        // omit default case to trigger compiler warning for missing cases
+    }
+    return os << static_cast<uint8_t>(policy);
+  }
+
   LouvainEdgeWeight louvainEdgeWeightFromString(const std::string& type) {
     if (type == "hybrid") {
       return LouvainEdgeWeight::hybrid;
@@ -288,6 +298,16 @@ namespace mt_kahypar {
     }
     ERROR("Illegal option: " + type);
     return FMAlgorithm::do_nothing;
+  }
+
+  BatchSizePolicy batchSizePolicyFromString(const std::string& policy) {
+    if (policy == "constant") {
+      return BatchSizePolicy::constant;
+    } else if (policy == "sqrt") {
+      return BatchSizePolicy::sqrt;
+    }
+    ERROR("Illegal option: " + policy);
+    return BatchSizePolicy::UNDEFINED;
   }
 
 }

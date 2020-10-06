@@ -231,6 +231,20 @@ namespace mt_kahypar {
                               &context.initial_partitioning.refinement.refine_until_no_improvement))->value_name(
                      "<bool>")->default_value(false),
              "Executes all refinement algorithms as long as they find an improvement on the current partition.")
+            ((initial_partitioning ? "i-r-batch-size-policy" : "r-batch-size-policy"),
+             po::value<std::string>()->value_name("<string>")->notifier(
+                     [&, initial_partitioning](const std::string& policy) {
+                       if (initial_partitioning) {
+                         context.initial_partitioning.refinement.batch_size_policy =
+                                 batchSizePolicyFromString(policy);
+                       } else {
+                         context.refinement.batch_size_policy =
+                                 batchSizePolicyFromString(policy);
+                       }
+                     })->default_value("constant"),
+             "Batch Size Policy:\n"
+             "- constant (uses value defined by (i-)r-max-batch-size)\n"
+             "- sqrt (uses sqrt(|V|) as maximum batch size)")
             (( initial_partitioning ? "i-r-max-batch-size" : "r-max-batch-size"),
              po::value<size_t>((!initial_partitioning ? &context.refinement.max_batch_size :
                                 &context.initial_partitioning.refinement.max_batch_size))->value_name("<size_t>")->default_value(1000),
