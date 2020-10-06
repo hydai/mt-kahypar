@@ -40,6 +40,16 @@ namespace mt_kahypar {
     context.setupContractionLimit(hypergraph.totalWeight());
     context.sanityCheck();
 
+    // Setup Maximum Batch Size
+    if ( context.refinement.batch_size_policy == BatchSizePolicy::sqrt ) {
+      context.refinement.max_batch_size =
+        sqrt(static_cast<double>(hypergraph.initialNumNodes()));
+    }
+    if ( context.initial_partitioning.refinement.batch_size_policy == BatchSizePolicy::sqrt ) {
+      context.initial_partitioning.refinement.max_batch_size =
+        sqrt(static_cast<double>(hypergraph.initialNumNodes()));
+    }
+
     // Setup enabled IP algorithms
     if ( context.initial_partitioning.enabled_ip_algos.size() > 0 &&
          context.initial_partitioning.enabled_ip_algos.size() <
