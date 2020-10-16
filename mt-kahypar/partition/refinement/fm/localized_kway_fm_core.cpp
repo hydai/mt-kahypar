@@ -90,6 +90,10 @@ namespace mt_kahypar {
               fm_strategy.updateGain(phg, v, move);
             } else if (sharedData.nodeTracker.tryAcquireNode(v, thisSearch)) {
               fm_strategy.insertIntoPQ(phg, v, searchOfV);
+              ++tried_to_claim;
+            } else if ( !sharedData.nodeTracker.isLocked(v) ) {
+              ++failed_to_claim;
+              ++tried_to_claim;
             }
             neighborDeduplicator[v] = deduplicationTime;
           }

@@ -42,13 +42,26 @@ public:
           deltaPhg(context.partition.k),
           neighborDeduplicator(numNodes, 0),
           fm_strategy(context, numNodes, sharedData, runStats),
-          sharedData(sharedData)
+          sharedData(sharedData),
+          failed_to_claim(0),
+          tried_to_claim(0)
           { }
 
 
   bool findMoves(PartitionedHypergraph& phg, size_t taskID, size_t numSeeds);
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const ;
+
+  void resetConflictRate() {
+    failed_to_claim = 0;
+    tried_to_claim = 0;
+  }
+
+  double conflictRate() const {
+    return tried_to_claim == 0 ? std::numeric_limits<double>::max() :
+      static_cast<double>(failed_to_claim) /
+        static_cast<double>(tried_to_claim);
+  }
 
   FMStats stats;
 
@@ -107,6 +120,10 @@ private:
   FMStrategy fm_strategy;
 
   FMSharedData& sharedData;
+
+  // ! failed_to_claim / tried_to_claim = conflict_rate
+  size_t failed_to_claim;
+  size_t tried_to_claim;
 
 };
 

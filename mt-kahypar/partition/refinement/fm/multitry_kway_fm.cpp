@@ -35,6 +35,7 @@ namespace mt_kahypar {
 
     if (!is_initialized) throw std::runtime_error("Call initialize on fm before calling refine");
 
+    bool ignore_conflicts = refinement_nodes.size() == 0;
     Gain overall_improvement = 0;
     size_t consecutive_rounds_with_too_little_improvement = 0;
     enable_light_fm = false;
@@ -45,7 +46,7 @@ namespace mt_kahypar {
     vec<HypernodeWeight> initialPartWeights(size_t(sharedData.numParts));
     HighResClockTimepoint fm_start = std::chrono::high_resolution_clock::now();
     utils::Timer& timer = utils::Timer::instance();
-
+    size_t reduce_task_factor = 1;
     for (size_t round = 0; round < context.refinement.fm.multitry_rounds; ++round) { // global multi try rounds
       for (PartitionID i = 0; i < sharedData.numParts; ++i) {
         initialPartWeights[i] = phg.partWeight(i);
@@ -59,24 +60,16 @@ namespace mt_kahypar {
       if (num_border_nodes == 0) {
         break;
       }
-      size_t num_seeds = context.refinement.fm.num_seed_nodes;
-      if (context.type == kahypar::ContextType::main
-          && !refinement_nodes.empty()  /* n-level */
-          && num_border_nodes < 20 * context.shared_memory.num_threads) {
-        num_seeds = num_border_nodes / (4 * context.shared_memory.num_threads);
-        num_seeds = std::min(num_seeds, context.refinement.fm.num_seed_nodes);
-        num_seeds = std::max(num_seeds, 1UL);
-      }
 
       timer.start_timer("find_moves", "Find Moves");
       sharedData.finishedTasks.store(0, std::memory_order_relaxed);
       auto task = [&](const size_t task_id) {
         auto& fm = ets_fm.local();
         while(sharedData.finishedTasks.load(std::memory_order_relaxed) < sharedData.finishedTasksLimit
-              && fm.findMoves(phg, task_id, num_seeds)) { /* keep running*/ }
+              && fm.findMoves(phg, task_id, context.refinement.fm.num_seed_nodes)) { /* keep running*/ }
         sharedData.finishedTasks.fetch_add(1, std::memory_order_relaxed);
       };
-      size_t num_tasks = std::min(num_border_nodes, context.shared_memory.num_threads);
+      size_t num_tasks = std::max(context.shared_memory.num_threads / reduce_task_factor, 1UL);
       ASSERT(static_cast<int>(num_tasks) <= TBBNumaArena::instance().total_number_of_threads());
       for (size_t i = 0; i < num_tasks; ++i) {
         tg.run(std::bind(task, i));
@@ -95,6 +88,25 @@ namespace mt_kahypar {
         consecutive_rounds_with_too_little_improvement++;
       } else {
         consecutive_rounds_with_too_little_improvement = 0;
+      }
+
+      bool too_many_conflicts = false;
+      if ( !ignore_conflicts ) {
+        double avg_conflict_rate = 0.0;
+        size_t n = 0;
+        for ( LocalizedKWayFM<FMStrategy>& local_fm : ets_fm ) {
+          double conflict_rate = local_fm.conflictRate();
+          if ( conflict_rate != std::numeric_limits<double>::max() ) {
+            avg_conflict_rate += conflict_rate;
+            ++n;
+          }
+          local_fm.resetConflictRate();
+        }
+        avg_conflict_rate /= std::max(static_cast<double>(n), 1.0);
+        if ( avg_conflict_rate > 0.1 ) {
+          reduce_task_factor *= 2;
+          too_many_conflicts = true;
+        }
       }
 
       HighResClockTimepoint fm_timestamp = std::chrono::high_resolution_clock::now();
@@ -124,7 +136,7 @@ namespace mt_kahypar {
         }
       }
 
-      if (improvement <= 0 || consecutive_rounds_with_too_little_improvement >= 2) {
+      if ( ( improvement <= 0 || consecutive_rounds_with_too_little_improvement >= 2 ) && !too_many_conflicts ) {
         break;
       }
     }
