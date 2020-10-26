@@ -238,6 +238,12 @@ namespace mt_kahypar {
              po::value<size_t>((!initial_partitioning ? &context.refinement.max_batch_size :
                                 &context.initial_partitioning.refinement.max_batch_size))->value_name("<size_t>")->default_value(1000),
              "Maximum size of an uncontraction batch.")
+            ((initial_partitioning ? "i-r-enforce-min-number-of-border-vertices" : "r-enforce-min-number-of-border-vertices"),
+             po::value<bool>((!initial_partitioning ? &context.refinement.enforce_minimum_number_of_border_of_vertices :
+                              &context.initial_partitioning.refinement.enforce_minimum_number_of_border_of_vertices))->value_name(
+                     "<bool>")->default_value(true),
+             "If true, then we start a localized search during n-level uncontraction only"
+             "if we have a minimum number of border vertices available.")
             (( initial_partitioning ? "i-r-min-border-vertices-per-thread" : "r-min-border-vertices-per-thread"),
              po::value<size_t>((!initial_partitioning ? &context.refinement.min_border_vertices_per_thread :
                                 &context.initial_partitioning.refinement.min_border_vertices_per_thread))->value_name("<size_t>")->default_value(0),

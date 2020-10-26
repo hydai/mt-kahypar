@@ -292,7 +292,8 @@ namespace mt_kahypar {
           });
           utils::Timer::instance().stop_timer("collect_border_vertices", force_measure_timings);
 
-          if ( tmp_refinement_nodes.size() >= minimum_required_number_of_border_vertices ) {
+          if ( tmp_refinement_nodes.size() >= minimum_required_number_of_border_vertices ||
+               !_context.refinement.enforce_minimum_number_of_border_of_vertices ) {
             // Perform localized refinement if we uncontract more
             // than the minimum required number of border vertices
             do_localized_refinement();
