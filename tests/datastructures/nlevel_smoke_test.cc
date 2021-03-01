@@ -28,6 +28,7 @@
 #include "mt-kahypar/datastructures/partitioned_hypergraph.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/utils/randomize.h"
+#include "mt-kahypar/io/partitioning_output.h"
 
 namespace mt_kahypar {
 namespace ds {
@@ -122,6 +123,29 @@ DynamicHypergraph generateRandomHypergraph(const HypernodeID num_hypernodes,
   for ( size_t i = 0; i < num_hyperedges; ++i ) {
     parallel::scalable_vector<HypernodeID> net;
     const size_t edge_size = rand.getRandomInt(2, max_edge_size, sched_getcpu());
+    for ( size_t i = 0; i < edge_size; ++i ) {
+      const HypernodeID pin = rand.getRandomInt(0, num_hypernodes - 1, sched_getcpu());
+      if ( std::find(net.begin(), net.end(), pin) == net.end() ) {
+        net.push_back(pin);
+      }
+    }
+    hyperedges.emplace_back(std::move(net));
+  }
+  return DynamicHypergraphFactory::construct(
+    TBBNumaArena::GLOBAL_TASK_GROUP, num_hypernodes, num_hyperedges, hyperedges);
+}
+
+DynamicHypergraph generateRandomPowerLawHypergraph(const HypernodeID num_hypernodes,
+                                                   const HyperedgeID num_hyperedges,
+                                                   const HypernodeID max_edge_size,
+                                                   const double exp) {
+  std::default_random_engine generator;
+  std::exponential_distribution<double> exp_dist(exp);
+  parallel::scalable_vector<parallel::scalable_vector<HypernodeID>> hyperedges;
+  utils::Randomize& rand = utils::Randomize::instance();
+  for ( size_t i = 0; i < num_hyperedges; ++i ) {
+    parallel::scalable_vector<HypernodeID> net;
+    const size_t edge_size = std::max(exp_dist(generator) * max_edge_size, 2.0);
     for ( size_t i = 0; i < edge_size; ++i ) {
       const HypernodeID pin = rand.getRandomInt(0, num_hypernodes - 1, sched_getcpu());
       if ( std::find(net.begin(), net.end(), pin) == net.end() ) {
@@ -386,6 +410,54 @@ TEST(ANlevel, SimulatesParallelContractionsAndAccessToHypergraph) {
     tmp_hypergraph.contract(memento.v);
   });
   utils::Timer::instance().stop_timer("contractions_without_access");
+
+  if ( show_timings ) {
+    LOG << utils::Timer::instance(true);
+  }
+}
+
+TEST(ANlevel, PinCacheBenchmark) {
+  const HypernodeID num_hypernodes = 10000;
+  const HypernodeID num_hyperedges = 10000;
+  const HypernodeID max_edge_size = 10000;
+  const double exp = 35;
+  const HypernodeID num_contractions = 9950;
+  const size_t batch_size = 100;
+  const bool show_timings = true;
+  const bool debug = true;
+
+  if ( debug ) LOG << "Generate Random Hypergraph";
+  DynamicHypergraph original_hypergraph = generateRandomPowerLawHypergraph(num_hypernodes, num_hyperedges, max_edge_size, exp);
+  DynamicHypergraph without_pin_cache_hg = original_hypergraph.copy(TBBNumaArena::GLOBAL_TASK_GROUP);
+  DynamicPartitionedHypergraph without_pin_cache_phg(4, TBBNumaArena::GLOBAL_TASK_GROUP, without_pin_cache_hg);
+  DynamicHypergraph with_pin_cache_hg = original_hypergraph.copy(TBBNumaArena::GLOBAL_TASK_GROUP);
+  DynamicPartitionedHypergraph with_pin_cache_phhg(4, TBBNumaArena::GLOBAL_TASK_GROUP, with_pin_cache_hg);
+
+  if ( debug ) {
+    io::printHypergraphInfo(original_hypergraph, "Hypergraph", false);
+  }
+
+  if ( debug ) LOG << "Determine random contractions";
+  BatchVector contractions = generateRandomContractions(num_hypernodes, num_contractions);
+
+  utils::Timer::instance().clear();
+
+  if ( debug ) LOG << "Simulate n-Level without pin cache";
+  utils::Timer::instance().start_timer("without_pin_cache", "Without Pin Cache");
+  DynamicHypergraph coarsest_without_pin_cache = simulateNLevel(
+    without_pin_cache_hg, without_pin_cache_phg, contractions, batch_size, true);
+  utils::Timer::instance().stop_timer("without_pin_cache");
+
+  if ( debug ) LOG << "Simulate n-Level without pin cache";
+  utils::Timer::instance().start_timer("with_pin_cache", "With Pin Cache");
+  DynamicHypergraph coarsest_with_pin_cache = simulateNLevel(
+    with_pin_cache_hg, with_pin_cache_phhg, contractions, batch_size, true);
+  utils::Timer::instance().stop_timer("with_pin_cache");
+
+  if ( debug ) LOG << "Verify equality of hypergraphs";
+  verifyEqualityOfHypergraphs(coarsest_without_pin_cache, coarsest_with_pin_cache);
+  verifyEqualityOfHypergraphs(original_hypergraph, without_pin_cache_hg);
+  verifyEqualityOfHypergraphs(original_hypergraph, with_pin_cache_hg);
 
   if ( show_timings ) {
     LOG << utils::Timer::instance(true);
