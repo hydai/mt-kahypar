@@ -22,6 +22,7 @@
 
 #include <mutex>
 #include <queue>
+#include <unordered_map>
 
 #include "tbb/parallel_for.h"
 
@@ -487,6 +488,7 @@ class DynamicHypergraph {
   using ThreadLocalHyperedgeVector = tbb::enumerable_thread_specific<parallel::scalable_vector<HyperedgeID>>;
   using ThreadLocalBitset = tbb::enumerable_thread_specific<kahypar::ds::FastResetFlagArray<>>;
   using ThreadLocalBitvector = tbb::enumerable_thread_specific<parallel::scalable_vector<bool>>;
+  using PinCache = std::unordered_map<HypernodeID, size_t>;
 
  public:
   static constexpr bool is_static_hypergraph = false;
@@ -1010,6 +1012,12 @@ class DynamicHypergraph {
 
   // ####################### Initialization / Reset Functions #######################
 
+  /**
+   * Constructs for each hyperedge larger than the given threshold a cache with
+   * the position of the pins in the incidence array of each hyperedge.
+   */
+  void initializePinCache(const HypernodeID large_he_threshold);
+
   // ! Reset internal community information
   void setCommunityIDs(const parallel::scalable_vector<PartitionID>& community_ids) {
     ASSERT(community_ids.size() == UI64(_num_hypernodes));
@@ -1153,6 +1161,12 @@ class DynamicHypergraph {
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void contractHyperedge(const HypernodeID u, const HypernodeID v, const HyperedgeID he,
                                                             kahypar::ds::FastResetFlagArray<>& shared_incident_nets_u_and_v);
 
+  // ! Performs the contraction of (u,v) inside hyperedge he
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void contractHyperedgeWithPinCache(const HypernodeID u,
+                                                                        const HypernodeID v,
+                                                                        const HyperedgeID he,
+                                                                        kahypar::ds::FastResetFlagArray<>& shared_incident_nets_u_and_v);
+
   // ! Restore the size of the hyperedge to the size before the batch with
   // ! index batch_index was contracted.
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void restoreHyperedgeSizeForBatch(const HyperedgeID he,
@@ -1240,6 +1254,8 @@ class DynamicHypergraph {
   Array<Hyperedge> _hyperedges;
   // ! Incident nets of hypernodes
   IncidenceArray _incidence_array;
+  // ! Pin Cache storing the position of pins in a hyperedge (only for large hyperedges)
+  parallel::scalable_vector<std::unique_ptr<PinCache>> _pin_cache;
   // ! Atomic bool vector used to acquire unique ownership of hyperedges
   OwnershipVector _acquired_hes;
   // ! During batch uncontraction we flag hyperedges already considered for resizing

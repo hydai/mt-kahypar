@@ -350,8 +350,20 @@ parallel::scalable_vector<ParallelHyperedge> DynamicHypergraph::removeSinglePinA
     if ( edge_size > 1 ) {
       const Hyperedge& e = hyperedge(he);
       const size_t footprint = e.hash();
-      std::sort(_incidence_array.begin() + e.firstEntry(),
-                _incidence_array.begin() + e.firstInvalidEntry());
+      const size_t pins_begin = e.firstEntry();
+      const size_t pins_end = e.firstInvalidEntry();
+      std::sort(_incidence_array.begin() + pins_begin,
+                _incidence_array.begin() + pins_end);
+
+      // Update Pin Cache
+      if ( _pin_cache[he] ) {
+        PinCache& pin_cache = *_pin_cache[he];
+        for ( size_t idx = pins_begin; idx < pins_end; ++idx ) {
+          const HypernodeID pin = _incidence_array[idx];
+          ASSERT(pin_cache.find(pin) != pin_cache.end());
+          pin_cache[pin] = idx;
+        }
+      }
       hyperedge_hash_map.insert(footprint,
         ContractedHyperedgeInformation { he, footprint, edge_size, true });
     } else {
@@ -515,9 +527,22 @@ DynamicHypergraph DynamicHypergraph::copy(const TaskGroupID task_group_id) {
     memcpy(hypergraph._hyperedges.data(), _hyperedges.data(),
       sizeof(Hyperedge) * _hyperedges.size());
   }, [&] {
-    hypergraph._incidence_array.resize(_incidence_array.size());
-    memcpy(hypergraph._incidence_array.data(), _incidence_array.data(),
-      sizeof(HypernodeID) * _incidence_array.size());
+    tbb::parallel_invoke([&] {
+      hypergraph._incidence_array.resize(_incidence_array.size());
+      memcpy(hypergraph._incidence_array.data(), _incidence_array.data(),
+        sizeof(HypernodeID) * _incidence_array.size());
+    }, [&] {
+      hypergraph._pin_cache.resize(_pin_cache.size());
+      tbb::parallel_for(0UL, _pin_cache.size(), [&](const size_t i) {
+        if ( _pin_cache[i] ) {
+          hypergraph._pin_cache[i] = std::make_unique<PinCache>();
+          PinCache& target_pin_cache = *hypergraph._pin_cache[i];
+          for ( const auto& entry : *_pin_cache[i] ) {
+            target_pin_cache[entry.first] = entry.second;
+          }
+        }
+      });
+    });
   }, [&] {
     hypergraph._acquired_hes.resize(_num_hyperedges);
     tbb::parallel_for(ID(0), _num_hyperedges, [&](const HyperedgeID& he) {
@@ -571,6 +596,16 @@ DynamicHypergraph DynamicHypergraph::copy() {
   hypergraph._incidence_array.resize(_incidence_array.size());
   memcpy(hypergraph._incidence_array.data(), _incidence_array.data(),
     sizeof(HypernodeID) * _incidence_array.size());
+  hypergraph._pin_cache.resize(_pin_cache.size());
+  for ( size_t i = 0; i < _pin_cache.size(); ++i ) {
+    if ( _pin_cache[i] ) {
+      hypergraph._pin_cache[i] = std::make_unique<PinCache>();
+      PinCache& target_pin_cache = *hypergraph._pin_cache[i];
+      for ( const auto& entry : *_pin_cache[i] ) {
+        target_pin_cache[entry.first] = entry.second;
+      }
+    }
+  }
   hypergraph._acquired_hes.resize(_num_hyperedges);
   for ( HyperedgeID he = 0; he < _num_hyperedges; ++he ) {
     hypergraph._acquired_hes[he] = _acquired_hes[he];
@@ -689,7 +724,11 @@ DynamicHypergraph::ContractionResult DynamicHypergraph::contract(const Hypernode
       // Try to acquire ownership of hyperedge. In case of success, we perform the
       // contraction and otherwise, we remember the hyperedge and try later again.
       if ( tryAcquireHyperedge(he) ) {
-        contractHyperedge(u, v, he, shared_incident_nets_u_and_v);
+        if ( _pin_cache[he] ) {
+          contractHyperedgeWithPinCache(u, v, he, shared_incident_nets_u_and_v);
+        } else {
+          contractHyperedge(u, v, he, shared_incident_nets_u_and_v);
+        }
         releaseHyperedge(he);
       } else {
         failed_hyperedge_contractions.push_back(he);
@@ -699,7 +738,11 @@ DynamicHypergraph::ContractionResult DynamicHypergraph::contract(const Hypernode
     // Perform contraction on which we failed to acquire ownership on the first try
     for ( const HyperedgeID& he : failed_hyperedge_contractions ) {
       acquireHyperedge(he);
-      contractHyperedge(u, v, he, shared_incident_nets_u_and_v);
+      if ( _pin_cache[he] ) {
+        contractHyperedgeWithPinCache(u, v, he, shared_incident_nets_u_and_v);
+      } else {
+        contractHyperedge(u, v, he, shared_incident_nets_u_and_v);
+      }
       releaseHyperedge(he);
     }
 
@@ -771,6 +814,50 @@ void DynamicHypergraph::contractHyperedge(const HypernodeID u,
     e.hash() -= kahypar::math::hash(v);
     e.hash() += kahypar::math::hash(u);
     _incidence_array[last_pin_slot] = u;
+  }
+}
+
+// ! Performs the contraction of (u,v) inside hyperedge he
+void DynamicHypergraph::contractHyperedgeWithPinCache(const HypernodeID u,
+                                                      const HypernodeID v,
+                                                      const HyperedgeID he,
+                                                      kahypar::ds::FastResetFlagArray<>& shared_incident_nets_u_and_v) {
+  ASSERT(_pin_cache[he]);
+  PinCache& pin_cache = *_pin_cache[he];
+  Hyperedge& e = hyperedge(he);
+  HypernodeID last_pin_slot = e.firstInvalidEntry() - 1;
+  HypernodeID slot_of_u = e.firstInvalidEntry();
+  const auto& it = pin_cache.find(u);
+  if ( it != pin_cache.end() ) {
+    slot_of_u = it->second;
+    ASSERT(_incidence_array[slot_of_u] == u);
+  }
+  ASSERT(pin_cache.find(v) != pin_cache.end());
+  HypernodeID slot_of_v = pin_cache[v];
+  ASSERT(_incidence_array[slot_of_v] == v);
+
+  const HypernodeID last_pin = _incidence_array[last_pin_slot];
+  std::swap(_incidence_array[slot_of_v], _incidence_array[last_pin_slot]);
+  pin_cache[last_pin] = slot_of_v;
+  ASSERT(_incidence_array[last_pin_slot] == v, "v is not last entry in adjacency array!");
+
+  if (slot_of_u != last_pin_slot + 1) {
+    // Case 1:
+    // Hyperedge e contains both u and v. Thus we don't need to connect u to e and
+    // can just cut off the last entry in the edge array of e that now contains v.
+    DBG << V(he) << "(" << u << "," << v << ")" << ": Case 1";
+    e.hash() -= kahypar::math::hash(v);
+    e.decrementSize();
+    shared_incident_nets_u_and_v.set(he, true);
+  } else {
+    DBG << V(he) << "(" << u << "," << v << ")" << ": Case 2";
+    // Case 2:
+    // Hyperedge e does not contain u. Therefore we  have to connect e to the representative u.
+    // This reuses the pin slot of v in e's incidence array (i.e. last_pin_slot!)
+    e.hash() -= kahypar::math::hash(v);
+    e.hash() += kahypar::math::hash(u);
+    _incidence_array[last_pin_slot] = u;
+    pin_cache[u] = last_pin_slot;
   }
 }
 
@@ -863,6 +950,22 @@ bool DynamicHypergraph::verifyBatchIndexAssignments(
   }
 
   return true;
+}
+
+void DynamicHypergraph::initializePinCache(const HypernodeID large_he_threshold) {
+  ASSERT(_pin_cache.size() == static_cast<size_t>(_num_hyperedges));
+  tbb::parallel_for(ID(0), _num_hyperedges, [&](const HyperedgeID& he) {
+    if ( edgeSize(he) >= large_he_threshold ) {
+      _pin_cache[he] = std::make_unique<PinCache>();
+      PinCache& pin_cache = *_pin_cache[he];
+      const size_t incidence_array_start = hyperedge(he).firstEntry();
+      const size_t incidence_array_end = hyperedge(he).firstInvalidEntry();
+      for ( size_t i = incidence_array_start; i < incidence_array_end; ++i ) {
+        const HypernodeID hn = _incidence_array[i];
+        pin_cache[hn] = i;
+      }
+    }
+  });
 }
 
 /**

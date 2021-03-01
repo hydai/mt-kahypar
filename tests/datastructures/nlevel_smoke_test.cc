@@ -423,8 +423,8 @@ TEST(ANlevel, PinCacheBenchmark) {
   const double exp = 35;
   const HypernodeID num_contractions = 9950;
   const size_t batch_size = 100;
-  const bool show_timings = true;
-  const bool debug = true;
+  const bool show_timings = false;
+  const bool debug = false;
 
   if ( debug ) LOG << "Generate Random Hypergraph";
   DynamicHypergraph original_hypergraph = generateRandomPowerLawHypergraph(num_hypernodes, num_hyperedges, max_edge_size, exp);
@@ -448,8 +448,11 @@ TEST(ANlevel, PinCacheBenchmark) {
     without_pin_cache_hg, without_pin_cache_phg, contractions, batch_size, true);
   utils::Timer::instance().stop_timer("without_pin_cache");
 
-  if ( debug ) LOG << "Simulate n-Level without pin cache";
+  if ( debug ) LOG << "Simulate n-Level with pin cache";
   utils::Timer::instance().start_timer("with_pin_cache", "With Pin Cache");
+  utils::Timer::instance().start_timer("initialize_pin_cache", "Initialize Pin Cache");
+  with_pin_cache_hg.initializePinCache(250);
+  utils::Timer::instance().stop_timer("initialize_pin_cache");
   DynamicHypergraph coarsest_with_pin_cache = simulateNLevel(
     with_pin_cache_hg, with_pin_cache_phhg, contractions, batch_size, true);
   utils::Timer::instance().stop_timer("with_pin_cache");
