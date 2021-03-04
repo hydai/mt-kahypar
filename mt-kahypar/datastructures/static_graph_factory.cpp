@@ -60,10 +60,6 @@ namespace mt_kahypar::ds {
         ++num_incident_nets_per_vertex[pin];
       }
     });
-    hypergraph._max_edge_size = local_max_edge_size.combine(
-            [&](const size_t lhs, const size_t rhs) {
-              return std::max(lhs, rhs);
-            });
 
     // We sum up the number of incident nets per vertex only thread local.
     // To obtain the global number of incident nets per vertex, we iterate
@@ -156,7 +152,7 @@ namespace mt_kahypar::ds {
       });
     }
 
-    hypergraph.computeAndSetTotalHypernodeWeight(task_group_id);
+    hypergraph.computeAndSetTotalNodeWeight(task_group_id);
 
     utils::Timer::instance().stop_timer("setup_hypergraph");
     return hypergraph;

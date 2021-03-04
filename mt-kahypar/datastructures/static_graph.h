@@ -370,10 +370,6 @@ class StaticGraph {
     _num_hypernodes(0),
     _num_removed_hypernodes(0),
     _num_hyperedges(0),
-    _num_removed_hyperedges(0),
-    _max_edge_size(0),
-    _num_pins(0),
-    _total_degree(0),
     _total_weight(0),
     _hypernodes(),
     _incident_nets(),
@@ -389,10 +385,6 @@ class StaticGraph {
     _num_hypernodes(other._num_hypernodes),
     _num_removed_hypernodes(other._num_removed_hypernodes),
     _num_hyperedges(other._num_hyperedges),
-    _num_removed_hyperedges(other._num_removed_hyperedges),
-    _max_edge_size(other._max_edge_size),
-    _num_pins(other._num_pins),
-    _total_degree(other._total_degree),
     _total_weight(other._total_weight),
     _hypernodes(std::move(other._hypernodes)),
     _incident_nets(std::move(other._incident_nets)),
@@ -407,10 +399,6 @@ class StaticGraph {
     _num_hypernodes = other._num_hypernodes;
     _num_removed_hypernodes = other._num_removed_hypernodes;
     _num_hyperedges = other._num_hyperedges;
-    _num_removed_hyperedges = other._num_removed_hyperedges;
-    _max_edge_size = other._max_edge_size;
-    _num_pins = other._num_pins;
-    _total_degree = other._total_degree;
     _total_weight = other._total_weight;
     _hypernodes = std::move(other._hypernodes);
     _incident_nets = std::move(other._incident_nets);
@@ -449,22 +437,22 @@ class StaticGraph {
 
   // ! Number of removed hyperedges
   HyperedgeID numRemovedHyperedges() const {
-    return _num_removed_hyperedges;
+    return 0;
   }
 
   // ! Set the number of removed hyperedges
   void setNumRemovedHyperedges(const HyperedgeID num_removed_hyperedges) {
-    _num_removed_hyperedges = num_removed_hyperedges;
+    ASSERT(num_removed_hyperedges == 0);
   }
 
   // ! Initial number of pins
   HypernodeID initialNumPins() const {
-    return _num_pins;
+    return 2 * _num_hyperedges;
   }
 
   // ! Initial sum of the degree of all vertices
   HypernodeID initialTotalVertexDegree() const {
-    return _total_degree;
+    return 2 * _num_hyperedges;
   }
 
   // ! Total weight of hypergraph
@@ -473,7 +461,7 @@ class StaticGraph {
   }
 
   // ! Computes the total node weight of the hypergraph
-  void computeAndSetTotalHypernodeWeight(const TaskGroupID);
+  void computeAndSetTotalNodeWeight(const TaskGroupID);
 
   // ####################### Iterators #######################
 
@@ -582,7 +570,7 @@ class StaticGraph {
 
   // ! Maximum size of a hyperedge
   HypernodeID maxEdgeSize() const {
-    return _max_edge_size;
+    return 2;
   }
 
   // ! Returns, whether a hyperedge is enabled or not
@@ -768,7 +756,7 @@ class StaticGraph {
   void allocateTmpContractionBuffer() {
     if ( !_tmp_contraction_buffer ) {
       _tmp_contraction_buffer = new TmpContractionBuffer(
-        _num_hypernodes, _num_hyperedges, _num_pins);
+        _num_hypernodes, _num_hyperedges, 2 * _num_hyperedges);
     }
   }
 
@@ -777,15 +765,8 @@ class StaticGraph {
   // ! Number of removed hypernodes
   HypernodeID _num_removed_hypernodes;
   // ! Number of hyperedges
+  // TODO: remove
   HyperedgeID _num_hyperedges;
-  // ! Number of removed hyperedges
-  HyperedgeID _num_removed_hyperedges;
-  // ! Maximum size of a hyperedge
-  HypernodeID _max_edge_size;
-  // ! Number of pins
-  HypernodeID _num_pins;
-  // ! Total degree of all vertices
-  HypernodeID _total_degree;
   // ! Total weight of hypergraph
   HypernodeWeight _total_weight;
 

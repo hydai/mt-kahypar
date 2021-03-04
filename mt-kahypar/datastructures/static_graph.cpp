@@ -519,10 +519,6 @@ namespace mt_kahypar::ds {
     hypergraph._num_hypernodes = _num_hypernodes;
     hypergraph._num_removed_hypernodes = _num_removed_hypernodes;
     hypergraph._num_hyperedges = _num_hyperedges;
-    hypergraph._num_removed_hyperedges = _num_removed_hyperedges;
-    hypergraph._max_edge_size = _max_edge_size;
-    hypergraph._num_pins = _num_pins;
-    hypergraph._total_degree = _total_degree;
     hypergraph._total_weight = _total_weight;
 
     tbb::parallel_invoke([&] {
@@ -554,10 +550,6 @@ namespace mt_kahypar::ds {
     hypergraph._num_hypernodes = _num_hypernodes;
     hypergraph._num_removed_hypernodes = _num_removed_hypernodes;
     hypergraph._num_hyperedges = _num_hyperedges;
-    hypergraph._num_removed_hyperedges = _num_removed_hyperedges;
-    hypergraph._max_edge_size = _max_edge_size;
-    hypergraph._num_pins = _num_pins;
-    hypergraph._total_degree = _total_degree;
     hypergraph._total_weight = _total_weight;
 
     hypergraph._hypernodes.resize(_hypernodes.size());
