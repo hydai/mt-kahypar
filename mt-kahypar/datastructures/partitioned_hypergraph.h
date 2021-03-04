@@ -268,16 +268,6 @@ private:
     return _hg->nodeIsEnabled(u);
   }
 
-  // ! Enables a hypernode (must be disabled before)
-  void enableHypernode(const HypernodeID u) {
-    _hg->enableHypernode(u);
-  }
-
-  // ! Disable a hypernode (must be enabled before)
-  void disableHypernode(const HypernodeID u) {
-    _hg->disableHypernode(u);
-  }
-
   // ! Restores a degree zero hypernode
   void restoreDegreeZeroHypernode(const HypernodeID u, const PartitionID to) {
     _hg->restoreDegreeZeroHypernode(u);
@@ -304,16 +294,6 @@ private:
   // ! Returns, whether a hyperedge is enabled or not
   bool edgeIsEnabled(const HyperedgeID e) const {
     return _hg->edgeIsEnabled(e);
-  }
-
-  // ! Enables a hyperedge (must be disabled before)
-  void enableHyperedge(const HyperedgeID e) {
-    _hg->enableHyperedge(e);
-  }
-
-  // ! Disabled a hyperedge (must be enabled before)
-  void disableHyperedge(const HyperedgeID e) {
-    _hg->disableHyperedge(e);
   }
 
   bool isGraphEdge(const HyperedgeID e) const {
