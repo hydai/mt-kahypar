@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <boost/range/irange.hpp>
 
 #include "tbb/parallel_for.h"
 
@@ -72,20 +73,17 @@ class StaticGraph {
 
     Node() :
       _begin(0),
-      _size(0),
       _weight(1),
       _valid(false) { }
 
     Node(const bool valid) :
       _begin(0),
-      _size(0),
       _weight(1),
       _valid(valid) { }
 
     // Sentinel Constructor
     Node(const size_t begin) :
       _begin(begin),
-      _size(0),
       _weight(1),
       _valid(false) { }
 
@@ -104,7 +102,7 @@ class StaticGraph {
     }
 
     // ! Returns the index of the first element in _incident_nets
-    size_t firstEntry() const {
+    HyperedgeID firstEntry() const {
       return _begin;
     }
 
@@ -112,21 +110,6 @@ class StaticGraph {
     void setFirstEntry(size_t begin) {
       ASSERT(!isDisabled());
       _begin = begin;
-    }
-
-    // ! Returns the index of the first element in _incident_nets
-    size_t firstInvalidEntry() const {
-      return _begin + _size;
-    }
-
-    size_t size() const {
-      ASSERT(!isDisabled());
-      return _size;
-    }
-
-    void setSize(size_t size) {
-      ASSERT(!isDisabled());
-      _size = size;
     }
 
     HyperedgeWeight weight() const {
@@ -139,10 +122,8 @@ class StaticGraph {
     }
 
    private:
-    // ! Index of the first element in _incident_nets
-    size_t _begin;
-    // ! Number of incident nets
-    size_t _size;
+    // ! Index of the first element in _edges
+    HyperedgeID _begin;
     // ! Node weight
     HypernodeWeight _weight;
     // ! Flag indicating whether or not the element is active.
@@ -153,46 +134,33 @@ class StaticGraph {
    * Represents a hyperedge of the hypergraph and contains all information
    * associated with a net (except connectivity information).
    */
-  class Hyperedge {
+  class Edge {
    public:
     using IDType = HyperedgeID;
 
-    Hyperedge() :
-      _begin(0),
-      _size(0),
+    Edge() :
+      _target(0),
+      _backwards_edge(0),
       _weight(1) { }
 
-    // Sentinel Constructor
-    Hyperedge(const size_t begin) :
-      _begin(begin),
-      _size(0),
-    _weight(1) { }
-
-    bool isDisabled() const {
-      return false;
+    // ! Returns the index of the target node
+    HypernodeID target() const {
+      return _target;
     }
 
-    // ! Returns the index of the first element in _incidence_array
-    size_t firstEntry() const {
-      return _begin;
+    // ! Sets the index of the target node
+    void setTarget(HypernodeID target) {
+      _target = target;
     }
 
-    // ! Sets the index of the first element in _incidence_array to begin
-    void setFirstEntry(size_t begin) {
-      _begin = begin;
+    // ! Returns the index of the corresponding backwards edge
+    HyperedgeID backwardsEdge() const {
+      return _backwards_edge;
     }
 
-    // ! Returns the index of the first element in _incidence_array
-    size_t firstInvalidEntry() const {
-      return _begin + _size;
-    }
-
-    size_t size() const {
-      return _size;
-    }
-
-    void setSize(size_t size) {
-      _size = size;
+    // ! Sets the index of the corresponding backwards edge
+    void setBackwardsEdge(HyperedgeID backwards_edge) {
+      _backwards_edge = backwards_edge;
     }
 
     HyperedgeWeight weight() const {
@@ -203,54 +171,46 @@ class StaticGraph {
       _weight = weight;
     }
 
-    bool operator== (const Hyperedge& rhs) const {
-      return _begin == rhs._begin && _size == rhs._size && _weight == rhs._weight;
+    bool operator== (const Edge& rhs) const {
+      return _target == rhs._target && _backwards_edge == rhs._backwards_edge && _weight == rhs._weight;
     }
 
-    bool operator!= (const Hyperedge& rhs) const {
-      return _begin != rhs._begin || _size != rhs._size || _weight != rhs._weight;
+    bool operator!= (const Edge& rhs) const {
+      return _target != rhs._target || _backwards_edge != rhs._backwards_edge || _weight != rhs._weight;
     }
 
    private:
-    // ! Index of the first element in _incidence_array
-    size_t _begin;
-    // ! Number of pins
-    size_t _size;
+    // ! Index of target node
+    HypernodeID _target;
+    // ! Index of corresponding backwards edge
+    // TODO: this is not very performant and should be removed eventually
+    HyperedgeID _backwards_edge;
     // ! hyperedge weight
     HyperedgeWeight _weight;
   };
 
   /*!
-   * Iterator for HypergraphElements (Nodes/Hyperedges)
+   * Iterator for nodes
    *
-   * The iterator is used in for-each loops over all hypernodes/hyperedges.
+   * The iterator is used in for-each loops over all nodes.
    * In order to support iteration over coarsened hypergraphs, this iterator
-   * skips over HypergraphElements marked as invalid.
+   * skips over nodes marked as invalid.
    * Iterating over the set of vertices \f$V\f$ therefore is linear in the
    * size \f$|V|\f$ of the original hypergraph - even if it has been coarsened
-   * to much smaller size. The same also holds true for for-each loops over
-   * the set of hyperedges.
+   * to much smaller size.
    *
    * In order to be as generic as possible, the iterator does not expose the
-   * internal Node/Hyperedge representations. Instead only handles to
-   * the respective elements are returned, i.e. the IDs of the corresponding
-   * hypernodes/hyperedges.
-   *
+   * internal representation. Instead only handles to the respective elements
+   * are returned, i.e. the IDs of the corresponding hypernodes/hyperedges.
    */
-  template <typename ElementType>
-  class HypergraphElementIterator :
+  class NodeIterator :
     public std::iterator<std::forward_iterator_tag,    // iterator_category
-                         typename ElementType::IDType,   // value_type
+                         HypernodeID,   // value_type
                          std::ptrdiff_t,   // difference_type
-                         const typename ElementType::IDType*,   // pointer
-                         typename ElementType::IDType> {   // reference
+                         const HypernodeID*,   // pointer
+                         HypernodeID> {   // reference
    public:
-    using IDType = typename ElementType::IDType;
-
     /*!
-     * Construct a HypergraphElementIterator
-     * See GenericHypergraph::nodes() or GenericHypergraph::edges() for usage.
-     *
      * If start_element is invalid, the iterator advances to the first valid
      * element.
      *
@@ -258,63 +218,201 @@ class StaticGraph {
      * \param id The index of the element the pointer points to
      * \param max_id The maximum index allowed
      */
-    HypergraphElementIterator(const ElementType* start_element, IDType id, IDType max_id) :
+    NodeIterator(const Node* start_element, HypernodeID id, HypernodeID max_id) :
       _id(id),
       _max_id(max_id),
-      _element(start_element) {
-      if (_id != _max_id && _element->isDisabled()) {
+      _node(start_element) {
+      if (_id != _max_id && _node->isDisabled()) {
         operator++ ();
       }
     }
 
     // ! Returns the id of the element the iterator currently points to.
-    IDType operator* () const {
+    HypernodeID operator* () const {
       return _id;
     }
 
     // ! Prefix increment. The iterator advances to the next valid element.
-    HypergraphElementIterator & operator++ () {
+    NodeIterator & operator++ () {
       ASSERT(_id < _max_id);
       do {
         ++_id;
-        ++_element;
-      } while (_id < _max_id && _element->isDisabled());
+        ++_node;
+      } while (_id < _max_id && _node->isDisabled());
       return *this;
     }
 
     // ! Postfix increment. The iterator advances to the next valid element.
-    HypergraphElementIterator operator++ (int) {
-      HypergraphElementIterator copy = *this;
+    NodeIterator operator++ (int) {
+      NodeIterator copy = *this;
       operator++ ();
       return copy;
     }
 
-    bool operator!= (const HypergraphElementIterator& rhs) {
+    bool operator!= (const NodeIterator& rhs) {
       return _id != rhs._id;
     }
 
-    bool operator== (const HypergraphElementIterator& rhs) {
+    bool operator== (const NodeIterator& rhs) {
       return _id == rhs._id;
     }
 
    private:
-    // Handle to the HypergraphElement the iterator currently points to
-    IDType _id = 0;
+    // Handle to the node the iterator currently points to
+    HypernodeID _id = 0;
     // Maximum allowed index
-    IDType _max_id = 0;
-    // HypergraphElement the iterator currently points to
-    const ElementType* _element = nullptr;
+    HypernodeID _max_id = 0;
+    // node the iterator currently points to
+    const Node* _node = nullptr;
+  };
+
+  /*!
+   * Iterator for edges
+   *
+   * The iterator is used in for-each loops over all edges.
+   * Because we use an adjacency array, each edge appears twice and needs to be
+   * deduplicated by only returning edges where the id of the target node is
+   * larger then the id of the source node.
+   *
+   * In order to be as generic as possible, the iterator does not expose the
+   * internal representation. Instead only handles to the respective elements
+   * are returned, i.e. the IDs of the corresponding hypernodes/hyperedges.
+   */
+  class EdgeIterator :
+    public std::iterator<std::forward_iterator_tag,    // iterator_category
+                         HyperedgeID,   // value_type
+                         std::ptrdiff_t,   // difference_type
+                         const HyperedgeID*,   // pointer
+                         HyperedgeID> {   // reference
+   public:
+    /*!
+     * If the given id is invalid, the iterator advances to the first valid
+     * element.
+     *
+     * \param edges A reference to the edge array
+     * \param id The index of the element the pointer points to
+     * \param max_id The maximum index allowed
+     */
+    EdgeIterator(const Array<Edge>& edges, HyperedgeID id, HyperedgeID max_id) :
+      _id(id),
+      _max_id(max_id),
+      _edges(edges) {
+      if (_id != _max_id && !currentEdgeIsValid()) {
+        operator++ ();
+      }
+    }
+
+    // ! Returns the id of the element the iterator currently points to.
+    HypernodeID operator* () const {
+      return _id;
+    }
+
+    // ! Prefix increment. The iterator advances to the next valid element.
+    EdgeIterator & operator++ () {
+      ASSERT(_id < _max_id);
+      do {
+        ++_id;
+      } while (_id < _max_id && !currentEdgeIsValid());
+      return *this;
+    }
+
+    // ! Postfix increment. The iterator advances to the next valid element.
+    EdgeIterator operator++ (int) {
+      EdgeIterator copy = *this;
+      operator++ ();
+      return copy;
+    }
+
+    bool operator!= (const EdgeIterator& rhs) {
+      return _id != rhs._id;
+    }
+
+    bool operator== (const EdgeIterator& rhs) {
+      return _id == rhs._id;
+    }
+
+   private:
+    bool currentEdgeIsValid() const {
+      const Edge& edge = _edges.get()[_id];
+      const Edge& backwards = _edges.get()[edge.backwardsEdge()];
+      ASSERT(edge.weight() == backwards.weight() &&
+             backwards.target() == _id &&
+             edge.target() != backwards.target());
+      return backwards.target() < edge.target();
+    }
+
+    // Handle to the edge the iterator currently points to
+    HyperedgeID _id = 0;
+    // Maximum allowed index
+    HyperedgeID _max_id = 0;
+    // edge array of the graph
+    std::reference_wrapper<const Array<Edge>> _edges;
+  };
+
+  /*!
+   * Iterator for pins of an edge
+   *
+   * Note that because this is a graph, each edge has exactly two pins.
+   */
+  class PinIterator :
+    public std::iterator<std::forward_iterator_tag,    // iterator_category
+                         HypernodeID,   // value_type
+                         std::ptrdiff_t,   // difference_type
+                         const HypernodeID*,   // pointer
+                         HypernodeID> {   // reference
+   public:
+    /*!
+     * Constructs a pin iterator based on the IDs of the two nodes
+     */
+    PinIterator(HypernodeID source, HypernodeID target, unsigned int iteration_count) :
+      _source(source),
+      _target(target),
+      _iteration_count(iteration_count) {
+    }
+
+    // ! Returns the id of the element the iterator currently points to.
+    HypernodeID operator* () const {
+      return _iteration_count == 0 ? _source : _target;
+    }
+
+    // ! Prefix increment. The iterator advances to the next valid element.
+    PinIterator & operator++ () {
+      ASSERT(_iteration_count < 2);
+      ++_iteration_count;
+      return *this;
+    }
+
+    // ! Postfix increment. The iterator advances to the next valid element.
+    PinIterator operator++ (int) {
+      PinIterator copy = *this;
+      operator++ ();
+      return copy;
+    }
+
+    bool operator!= (const PinIterator& rhs) {
+      return _iteration_count != rhs._iteration_count;
+    }
+
+    bool operator== (const PinIterator& rhs) {
+      return _iteration_count == rhs._iteration_count;
+    }
+
+   private:
+    // source node of the edge
+    HypernodeID _source = 0;
+    // target node of the edge
+    HypernodeID _target = 0;
+    // state of the iterator
+    unsigned int _iteration_count = 0;
   };
 
   static_assert(std::is_trivially_copyable<Node>::value, "Node is not trivially copyable");
-  static_assert(std::is_trivially_copyable<Hyperedge>::value, "Hyperedge is not trivially copyable");
-
-  using IncidenceArray = Array<HypernodeID>;
-  using IncidentNets = Array<HyperedgeID>;
+  static_assert(std::is_trivially_copyable<Edge>::value, "Hyperedge is not trivially copyable");
 
   // ! Contains buffers that are needed during multilevel contractions.
   // ! Struct is allocated on top level hypergraph and passed to each contracted
   // ! hypergraph such that memory can be reused in consecutive contractions.
+  // TODO
   struct TmpContractionBuffer {
     explicit TmpContractionBuffer(const HypernodeID num_hypernodes,
                                   const HyperedgeID num_hyperedges,
@@ -324,15 +422,11 @@ class StaticGraph {
       }, [&] {
         tmp_hypernodes.resize("Coarsening", "tmp_hypernodes", num_hypernodes);
       }, [&] {
-        tmp_incident_nets.resize("Coarsening", "tmp_incident_nets", num_pins);
-      }, [&] {
         tmp_num_incident_nets.resize("Coarsening", "tmp_num_incident_nets", num_hypernodes);
       }, [&] {
         hn_weights.resize("Coarsening", "hn_weights", num_hypernodes);
       }, [&] {
         tmp_hyperedges.resize("Coarsening", "tmp_hyperedges", num_hyperedges);
-      }, [&] {
-        tmp_incidence_array.resize("Coarsening", "tmp_incidence_array", num_pins);
       }, [&] {
         he_sizes.resize("Coarsening", "he_sizes", num_hyperedges);
       }, [&] {
@@ -342,11 +436,9 @@ class StaticGraph {
 
     Array<size_t> mapping;
     Array<Node> tmp_hypernodes;
-    IncidentNets tmp_incident_nets;
     Array<parallel::IntegralAtomicWrapper<size_t>> tmp_num_incident_nets;
     Array<parallel::IntegralAtomicWrapper<HypernodeWeight>> hn_weights;
-    Array<Hyperedge> tmp_hyperedges;
-    IncidenceArray tmp_incidence_array;
+    Array<Edge> tmp_hyperedges;
     Array<size_t> he_sizes;
     Array<size_t> valid_hyperedges;
   };
@@ -355,26 +447,24 @@ class StaticGraph {
   static constexpr bool is_static_hypergraph = true;
   static constexpr bool is_partitioned = false;
   static constexpr size_t SIZE_OF_HYPERNODE = sizeof(Node);
-  static constexpr size_t SIZE_OF_HYPEREDGE = sizeof(Hyperedge);
+  static constexpr size_t SIZE_OF_HYPEREDGE = sizeof(Edge);
 
   // ! Iterator to iterate over the hypernodes
-  using HypernodeIterator = HypergraphElementIterator<const Node>;
+  using HypernodeIterator = NodeIterator;
   // ! Iterator to iterate over the hyperedges
-  using HyperedgeIterator = HypergraphElementIterator<const Hyperedge>;
+  using HyperedgeIterator = EdgeIterator;
   // ! Iterator to iterate over the pins of a hyperedge
-  using IncidenceIterator = typename IncidenceArray::const_iterator;
+  using IncidenceIterator = PinIterator;
   // ! Iterator to iterate over the incident nets of a hypernode
-  using IncidentNetsIterator = typename IncidentNets::const_iterator;
+  using IncidentNetsIterator = boost::range_detail::integer_iterator<HyperedgeID>;
 
   explicit StaticGraph() :
-    _num_hypernodes(0),
-    _num_removed_hypernodes(0),
-    _num_hyperedges(0),
+    _num_nodes(0),
+    _num_removed_nodes(0),
+    _num_edges(0),
     _total_weight(0),
-    _hypernodes(),
-    _incident_nets(),
-    _hyperedges(),
-    _incidence_array(),
+    _nodes(),
+    _edges(),
     _community_ids(0),
     _tmp_contraction_buffer(nullptr) { }
 
@@ -382,28 +472,24 @@ class StaticGraph {
   StaticGraph & operator= (const StaticGraph &) = delete;
 
   StaticGraph(StaticGraph&& other) :
-    _num_hypernodes(other._num_hypernodes),
-    _num_removed_hypernodes(other._num_removed_hypernodes),
-    _num_hyperedges(other._num_hyperedges),
+    _num_nodes(other._num_nodes),
+    _num_removed_nodes(other._num_removed_nodes),
+    _num_edges(other._num_edges),
     _total_weight(other._total_weight),
-    _hypernodes(std::move(other._hypernodes)),
-    _incident_nets(std::move(other._incident_nets)),
-    _hyperedges(std::move(other._hyperedges)),
-    _incidence_array(std::move(other._incidence_array)),
+    _nodes(std::move(other._nodes)),
+    _edges(std::move(other._edges)),
     _community_ids(std::move(other._community_ids)),
     _tmp_contraction_buffer(std::move(other._tmp_contraction_buffer)) {
     other._tmp_contraction_buffer = nullptr;
   }
 
   StaticGraph & operator= (StaticGraph&& other) {
-    _num_hypernodes = other._num_hypernodes;
-    _num_removed_hypernodes = other._num_removed_hypernodes;
-    _num_hyperedges = other._num_hyperedges;
+    _num_nodes = other._num_nodes;
+    _num_removed_nodes = other._num_removed_nodes;
+    _num_edges = other._num_edges;
     _total_weight = other._total_weight;
-    _hypernodes = std::move(other._hypernodes);
-    _incident_nets = std::move(other._incident_nets);
-    _hyperedges = std::move(other._hyperedges);
-    _incidence_array = std::move(other._incidence_array);
+    _nodes = std::move(other._nodes);
+    _edges = std::move(other._edges);
     _community_ids = std::move(other._community_ids),
     _tmp_contraction_buffer = std::move(other._tmp_contraction_buffer);
     other._tmp_contraction_buffer = nullptr;
@@ -422,17 +508,17 @@ class StaticGraph {
 
   // ! Initial number of hypernodes
   HypernodeID initialNumNodes() const {
-    return _num_hypernodes;
+    return _num_nodes;
   }
 
   // ! Number of removed hypernodes
   HypernodeID numRemovedHypernodes() const {
-    return _num_removed_hypernodes;
+    return _num_removed_nodes;
   }
 
   // ! Initial number of hyperedges
   HyperedgeID initialNumEdges() const {
-    return _num_hyperedges;
+    return _num_edges;
   }
 
   // ! Number of removed hyperedges
@@ -447,12 +533,12 @@ class StaticGraph {
 
   // ! Initial number of pins
   HypernodeID initialNumPins() const {
-    return 2 * _num_hyperedges;
+    return 2 * _num_edges;
   }
 
   // ! Initial sum of the degree of all vertices
   HypernodeID initialTotalVertexDegree() const {
-    return 2 * _num_hyperedges;
+    return 2 * _num_edges;
   }
 
   // ! Total weight of hypergraph
@@ -469,7 +555,7 @@ class StaticGraph {
   // ! for each vertex
   template<typename F>
   void doParallelForAllNodes(const F& f) const {
-    tbb::parallel_for(ID(0), _num_hypernodes, [&](const HypernodeID& hn) {
+    tbb::parallel_for(ID(0), _num_nodes, [&](const HypernodeID& hn) {
       if ( nodeIsEnabled(hn) ) {
         f(hn);
       }
@@ -480,7 +566,7 @@ class StaticGraph {
   // ! for each net
   template<typename F>
   void doParallelForAllEdges(const F& f) const {
-    tbb::parallel_for(ID(0), _num_hyperedges, [&](const HyperedgeID& he) {
+    tbb::parallel_for(ID(0), _num_edges, [&](const HyperedgeID& he) {
       if ( edgeIsEnabled(he) ) {
         f(he);
       }
@@ -490,64 +576,65 @@ class StaticGraph {
   // ! Returns a range of the active nodes of the hypergraph
   IteratorRange<HypernodeIterator> nodes() const {
     return IteratorRange<HypernodeIterator>(
-      HypernodeIterator(_hypernodes.data(), ID(0), _num_hypernodes),
-      HypernodeIterator(_hypernodes.data() + _num_hypernodes, _num_hypernodes, _num_hypernodes));
+      HypernodeIterator(_nodes.data(), ID(0), _num_nodes),
+      HypernodeIterator(_nodes.data() + _num_nodes, _num_nodes, _num_nodes));
   }
 
   // ! Returns a range of the active edges of the hypergraph
   IteratorRange<HyperedgeIterator> edges() const {
     return IteratorRange<HyperedgeIterator>(
-      HyperedgeIterator(_hyperedges.data(), ID(0), _num_hyperedges),
-      HyperedgeIterator(_hyperedges.data() + _num_hyperedges, _num_hyperedges, _num_hyperedges));
+      HyperedgeIterator(_edges, ID(0), _num_edges),
+      HyperedgeIterator(_edges, _num_edges, _num_edges));
   }
 
   // ! Returns a range to loop over the incident nets of hypernode u.
   IteratorRange<IncidentNetsIterator> incidentEdges(const HypernodeID u) const {
-    return IteratorRange<IncidentNetsIterator>(
-      _incident_nets.cbegin() + hypernode(u).firstEntry(),
-      _incident_nets.cbegin() + hypernode(u + 1).firstEntry());
+    return incident_nets_of(u, 0);
   }
 
   // ! Returns a range to loop over the pins of hyperedge e.
-  IteratorRange<IncidenceIterator> pins(const HyperedgeID e) const {
-    const Hyperedge& he = hyperedge(e);
+  IteratorRange<IncidenceIterator> pins(const HyperedgeID id) const {
+    const Edge& e = edge(id);
+    const HypernodeID source = edge(e.backwardsEdge()).target();
+    const HypernodeID target = e.target();
     return IteratorRange<IncidenceIterator>(
-      _incidence_array.cbegin() + he.firstEntry(),
-      _incidence_array.cbegin() + he.firstInvalidEntry());
+      IncidenceIterator(source, target, 0),
+      IncidenceIterator(source, target, 2));
   }
 
     // ####################### Node Information #######################
 
   // ! Weight of a vertex
   HypernodeWeight nodeWeight(const HypernodeID u) const {
-    return hypernode(u).weight();
+    return node(u).weight();
   }
 
   // ! Sets the weight of a vertex
   void setHypernodeWeight(const HypernodeID u, const HypernodeWeight weight) {
-    return hypernode(u).setWeight(weight);
+    return node(u).setWeight(weight);
   }
 
   // ! Degree of a hypernode
   HyperedgeID nodeDegree(const HypernodeID u) const {
-    return hypernode(u + 1).firstEntry() - hypernode(u).firstEntry();
+    return node(u + 1).firstEntry() - node(u).firstEntry();
   }
 
-  // ! Returns, whether a hypernode is enabled or not
+  // ! Returns whether a hypernode is enabled or not
   bool nodeIsEnabled(const HypernodeID u) const {
-    return !hypernode(u).isDisabled();
+    return !node(u).isDisabled();
   }
 
   // ! Removes a degree zero hypernode
+  // TODO: can this be done implicitely?
   void removeDegreeZeroHypernode(const HypernodeID u) {
     ASSERT(nodeDegree(u) == 0);
-    hypernode(u).disable();
-    ++_num_removed_hypernodes;
+    node(u).disable();
+    ++_num_removed_nodes;
   }
 
   // ! Restores a degree zero hypernode
   void restoreDegreeZeroHypernode(const HypernodeID u) {
-    hypernode(u).enable();
+    node(u).enable();
     ASSERT(nodeDegree(u) == 0);
   }
 
@@ -555,17 +642,18 @@ class StaticGraph {
 
   // ! Weight of a hyperedge
   HypernodeWeight edgeWeight(const HyperedgeID e) const {
-    return hyperedge(e).weight();
+    return edge(e).weight();
   }
 
   // ! Sets the weight of a hyperedge
   void setEdgeWeight(const HyperedgeID e, const HyperedgeWeight weight) {
-    return hyperedge(e).setWeight(weight);
+    return edge(e).setWeight(weight);
   }
 
   // ! Number of pins of a hyperedge
   HypernodeID edgeSize(const HyperedgeID e) const {
-    return hyperedge(e).size();
+    ASSERT(e <= _num_edges, "Hyperedge" << e << "does not exist");
+    return 2;
   }
 
   // ! Maximum size of a hyperedge
@@ -667,7 +755,7 @@ class StaticGraph {
 
   // ! Reset internal community information
   void copyCommunityIDs(const parallel::scalable_vector<PartitionID>& community_ids) {
-    ASSERT(community_ids.size() == UI64(_num_hypernodes));
+    ASSERT(community_ids.size() == UI64(_num_nodes));
     doParallelForAllNodes([&](const HypernodeID& hn) {
       _community_ids[hn] = community_ids[hn];
     });
@@ -689,11 +777,11 @@ class StaticGraph {
 
   // ! Free internal data in parallel
   void freeInternalData() {
-    if ( _num_hypernodes > 0 || _num_hyperedges > 0 ) {
+    if ( _num_nodes > 0 || _num_edges > 0 ) {
       freeTmpContractionBuffer();
     }
-    _num_hypernodes = 0;
-    _num_hyperedges = 0;
+    _num_nodes = 0;
+    _num_edges = 0;
   }
 
   void freeTmpContractionBuffer() {
@@ -721,63 +809,62 @@ class StaticGraph {
 
   // ####################### Node Information #######################
 
-  // ! Accessor for hypernode-related information
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE const Node& hypernode(const HypernodeID u) const {
-    ASSERT(u <= _num_hypernodes, "Node" << u << "does not exist");
-    return _hypernodes[u];
+  // ! Accessor for node-related information
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE const Node& node(const HypernodeID u) const {
+    ASSERT(u <= _num_nodes, "Node" << u << "does not exist");
+    return _nodes[u];
   }
 
-  // ! To avoid code duplication we implement non-const version in terms of const version
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE Node& hypernode(const HypernodeID u) {
-    return const_cast<Node&>(static_cast<const StaticGraph&>(*this).hypernode(u));
+  // ! Accessor for node-related information
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE Node& node(const HypernodeID u) {
+    ASSERT(u <= _num_nodes, "Node" << u << "does not exist");
+    return _nodes[u];
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE IteratorRange<IncidentNetsIterator> incident_nets_of(const HypernodeID u,
                                                                                           const size_t pos = 0) const {
     return IteratorRange<IncidentNetsIterator>(
-      _incident_nets.cbegin() + hypernode(u).firstEntry() + pos,
-      _incident_nets.cbegin() + hypernode(u + 1).firstEntry());
+      boost::range_detail::integer_iterator<HyperedgeID>(node(u).firstEntry() + pos),
+      boost::range_detail::integer_iterator<HyperedgeID>(node(u + 1).firstEntry()));
   }
 
   // ####################### Hyperedge Information #######################
 
   // ! Accessor for hyperedge-related information
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE const Hyperedge& hyperedge(const HyperedgeID e) const {
-    ASSERT(e <= _num_hyperedges, "Hyperedge" << e << "does not exist");
-    return _hyperedges[e];
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE const Edge& edge(const HyperedgeID e) const {
+    ASSERT(e <= _num_edges, "Hyperedge" << e << "does not exist");
+    return _edges[e];
   }
 
-  // ! To avoid code duplication we implement non-const version in terms of const version
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE Hyperedge& hyperedge(const HyperedgeID e) {
-    return const_cast<Hyperedge&>(static_cast<const StaticGraph&>(*this).hyperedge(e));
+  // ! Accessor for hyperedge-related information
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE Edge& edge(const HyperedgeID e) {
+    ASSERT(e <= _num_edges, "Hyperedge" << e << "does not exist");
+    return _edges[e];
   }
 
   // ! Allocate the temporary contraction buffer
   void allocateTmpContractionBuffer() {
     if ( !_tmp_contraction_buffer ) {
       _tmp_contraction_buffer = new TmpContractionBuffer(
-        _num_hypernodes, _num_hyperedges, 2 * _num_hyperedges);
+        _num_nodes, _num_edges, 2 * _num_edges);
     }
   }
 
-  // ! Number of hypernodes
-  HypernodeID _num_hypernodes;
-  // ! Number of removed hypernodes
-  HypernodeID _num_removed_hypernodes;
-  // ! Number of hyperedges
-  // TODO: remove
-  HyperedgeID _num_hyperedges;
-  // ! Total weight of hypergraph
+  // ! Number of nodes
+  HypernodeID _num_nodes;
+  // ! Number of removed nodes
+  HypernodeID _num_removed_nodes;
+  // ! Number of edges
+  HyperedgeID _num_edges;
+  // ! Total weight of the graph
   HypernodeWeight _total_weight;
 
+  // TODO: the current representation, where HyperedgeID is an index into the edge array, is problematic.
+  // Each edge has two different possible IDs which can not be detected to be equal by direct comparison.
   // ! Nodes
-  Array<Node> _hypernodes;
-  // ! Pins of hyperedges
-  IncidentNets _incident_nets;
-  // ! Hyperedges
-  Array<Hyperedge> _hyperedges;
-  // ! Incident nets of hypernodes
-  IncidenceArray _incidence_array;
+  Array<Node> _nodes;
+  // ! Edges
+  Array<Edge> _edges;
 
   // ! Communities
   ds::Clustering _community_ids;

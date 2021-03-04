@@ -45,7 +45,7 @@ using TBBInitializer = mt_kahypar::parallel::TBBInitializer<HardwareTopology, fa
 #ifdef USE_STRONG_PARTITIONER
 #ifdef USE_GRAPH_STRUCTURE
 // not supported yet
-static_assert(false)
+static_assert(false);
 #else
 using Hypergraph = ds::DynamicHypergraph;
 using HypergraphFactory = ds::DynamicHypergraphFactory;
