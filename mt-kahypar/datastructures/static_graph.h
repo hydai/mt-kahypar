@@ -51,9 +51,10 @@ class StaticGraph {
   // out that this become a major sequential bottleneck in presence of high
   // degree vertices. Therefore, all vertices with temporary degree greater
   // than this threshold are contracted with a special procedure.
+  // TODO
   static constexpr HyperedgeID HIGH_DEGREE_CONTRACTION_THRESHOLD = ID(500000);
 
-  static_assert(std::is_unsigned<HypernodeID>::value, "Hypernode ID must be unsigned");
+  static_assert(std::is_unsigned<HypernodeID>::value, "Node ID must be unsigned");
   static_assert(std::is_unsigned<HyperedgeID>::value, "Hyperedge ID must be unsigned");
 
   using AtomicHypernodeID = parallel::IntegralAtomicWrapper<HypernodeID>;
@@ -65,24 +66,24 @@ class StaticGraph {
    * Represents a hypernode of the hypergraph and contains all information
    * associated with a vertex.
    */
-  class Hypernode {
+  class Node {
    public:
     using IDType = HypernodeID;
 
-    Hypernode() :
+    Node() :
       _begin(0),
       _size(0),
       _weight(1),
       _valid(false) { }
 
-    Hypernode(const bool valid) :
+    Node(const bool valid) :
       _begin(0),
       _size(0),
       _weight(1),
       _valid(valid) { }
 
     // Sentinel Constructor
-    Hypernode(const size_t begin) :
+    Node(const size_t begin) :
       _begin(begin),
       _size(0),
       _weight(1),
@@ -142,7 +143,7 @@ class StaticGraph {
     size_t _begin;
     // ! Number of incident nets
     size_t _size;
-    // ! Hypernode weight
+    // ! Node weight
     HypernodeWeight _weight;
     // ! Flag indicating whether or not the element is active.
     bool _valid;
@@ -159,30 +160,16 @@ class StaticGraph {
     Hyperedge() :
       _begin(0),
       _size(0),
-      _weight(1),
-      _valid(false) { }
+      _weight(1) { }
 
     // Sentinel Constructor
     Hyperedge(const size_t begin) :
       _begin(begin),
       _size(0),
-      _weight(1),
-      _valid(false) { }
-
-    // ! Disables the hypernode/hyperedge. Disable hypernodes/hyperedges will be skipped
-    // ! when iterating over the set of all nodes/edges.
-    void disable() {
-      ASSERT(!isDisabled());
-      _valid = false;
-    }
-
-    void enable() {
-      ASSERT(isDisabled());
-      _valid = true;
-    }
+    _weight(1) { }
 
     bool isDisabled() const {
-      return _valid == false;
+      return false;
     }
 
     // ! Returns the index of the first element in _incidence_array
@@ -192,7 +179,6 @@ class StaticGraph {
 
     // ! Sets the index of the first element in _incidence_array to begin
     void setFirstEntry(size_t begin) {
-      ASSERT(!isDisabled());
       _begin = begin;
     }
 
@@ -202,22 +188,18 @@ class StaticGraph {
     }
 
     size_t size() const {
-      ASSERT(!isDisabled());
       return _size;
     }
 
     void setSize(size_t size) {
-      ASSERT(!isDisabled());
       _size = size;
     }
 
     HyperedgeWeight weight() const {
-      ASSERT(!isDisabled());
       return _weight;
     }
 
     void setWeight(HyperedgeWeight weight) {
-      ASSERT(!isDisabled());
       _weight = weight;
     }
 
@@ -236,12 +218,10 @@ class StaticGraph {
     size_t _size;
     // ! hyperedge weight
     HyperedgeWeight _weight;
-    // ! Flag indicating whether or not the element is active.
-    bool _valid;
   };
 
   /*!
-   * Iterator for HypergraphElements (Hypernodes/Hyperedges)
+   * Iterator for HypergraphElements (Nodes/Hyperedges)
    *
    * The iterator is used in for-each loops over all hypernodes/hyperedges.
    * In order to support iteration over coarsened hypergraphs, this iterator
@@ -252,7 +232,7 @@ class StaticGraph {
    * the set of hyperedges.
    *
    * In order to be as generic as possible, the iterator does not expose the
-   * internal Hypernode/Hyperedge representations. Instead only handles to
+   * internal Node/Hyperedge representations. Instead only handles to
    * the respective elements are returned, i.e. the IDs of the corresponding
    * hypernodes/hyperedges.
    *
@@ -326,7 +306,7 @@ class StaticGraph {
     const ElementType* _element = nullptr;
   };
 
-  static_assert(std::is_trivially_copyable<Hypernode>::value, "Hypernode is not trivially copyable");
+  static_assert(std::is_trivially_copyable<Node>::value, "Node is not trivially copyable");
   static_assert(std::is_trivially_copyable<Hyperedge>::value, "Hyperedge is not trivially copyable");
 
   using IncidenceArray = Array<HypernodeID>;
@@ -361,7 +341,7 @@ class StaticGraph {
     }
 
     Array<size_t> mapping;
-    Array<Hypernode> tmp_hypernodes;
+    Array<Node> tmp_hypernodes;
     IncidentNets tmp_incident_nets;
     Array<parallel::IntegralAtomicWrapper<size_t>> tmp_num_incident_nets;
     Array<parallel::IntegralAtomicWrapper<HypernodeWeight>> hn_weights;
@@ -374,11 +354,11 @@ class StaticGraph {
  public:
   static constexpr bool is_static_hypergraph = true;
   static constexpr bool is_partitioned = false;
-  static constexpr size_t SIZE_OF_HYPERNODE = sizeof(Hypernode);
+  static constexpr size_t SIZE_OF_HYPERNODE = sizeof(Node);
   static constexpr size_t SIZE_OF_HYPEREDGE = sizeof(Hyperedge);
 
   // ! Iterator to iterate over the hypernodes
-  using HypernodeIterator = HypergraphElementIterator<const Hypernode>;
+  using HypernodeIterator = HypergraphElementIterator<const Node>;
   // ! Iterator to iterate over the hyperedges
   using HyperedgeIterator = HypergraphElementIterator<const Hyperedge>;
   // ! Iterator to iterate over the pins of a hyperedge
@@ -389,7 +369,6 @@ class StaticGraph {
   explicit StaticGraph() :
     _num_hypernodes(0),
     _num_removed_hypernodes(0),
-    _removed_degree_zero_hn_weight(0),
     _num_hyperedges(0),
     _num_removed_hyperedges(0),
     _max_edge_size(0),
@@ -409,7 +388,6 @@ class StaticGraph {
   StaticGraph(StaticGraph&& other) :
     _num_hypernodes(other._num_hypernodes),
     _num_removed_hypernodes(other._num_removed_hypernodes),
-    _removed_degree_zero_hn_weight(other._removed_degree_zero_hn_weight),
     _num_hyperedges(other._num_hyperedges),
     _num_removed_hyperedges(other._num_removed_hyperedges),
     _max_edge_size(other._max_edge_size),
@@ -428,7 +406,6 @@ class StaticGraph {
   StaticGraph & operator= (StaticGraph&& other) {
     _num_hypernodes = other._num_hypernodes;
     _num_removed_hypernodes = other._num_removed_hypernodes;
-    _removed_degree_zero_hn_weight = other._removed_degree_zero_hn_weight;
     _num_hyperedges = other._num_hyperedges;
     _num_removed_hyperedges = other._num_removed_hyperedges;
     _max_edge_size = other._max_edge_size;
@@ -465,11 +442,6 @@ class StaticGraph {
     return _num_removed_hypernodes;
   }
 
-  // ! Weight of removed degree zero vertics
-  HypernodeWeight weightOfRemovedDegreeZeroVertices() const {
-    return _removed_degree_zero_hn_weight;
-  }
-
   // ! Initial number of hyperedges
   HyperedgeID initialNumEdges() const {
     return _num_hyperedges;
@@ -501,16 +473,9 @@ class StaticGraph {
   }
 
   // ! Computes the total node weight of the hypergraph
-  void computeAndSetTotalNodeWeight(const TaskGroupID);
+  void computeAndSetTotalHypernodeWeight(const TaskGroupID);
 
   // ####################### Iterators #######################
-
-  // ! Iterates in parallel over all active nodes and calls function f
-  // ! for each vertex
-  template<typename F>
-  void doParallelForAllNodes(const F& f) {
-    static_cast<const StaticGraph&>(*this).doParallelForAllNodes(f);
-  }
 
   // ! Iterates in parallel over all active nodes and calls function f
   // ! for each vertex
@@ -522,13 +487,6 @@ class StaticGraph {
       }
     });
   }
-
-  // ! Iterates in parallel over all active edges and calls function f
-  // ! for each net
-  // template<typename F>
-  // void doParallelForAllEdges(const F& f) {
-  //   static_cast<const StaticGraph&>(*this).doParallelForAllEdges(f);
-  // }
 
   // ! Iterates in parallel over all active edges and calls function f
   // ! for each net
@@ -557,23 +515,20 @@ class StaticGraph {
 
   // ! Returns a range to loop over the incident nets of hypernode u.
   IteratorRange<IncidentNetsIterator> incidentEdges(const HypernodeID u) const {
-    ASSERT(!hypernode(u).isDisabled(), "Hypernode" << u << "is disabled");
-    const Hypernode& hn = hypernode(u);
     return IteratorRange<IncidentNetsIterator>(
-      _incident_nets.cbegin() + hn.firstEntry(),
-      _incident_nets.cbegin() + hn.firstInvalidEntry());
+      _incident_nets.cbegin() + hypernode(u).firstEntry(),
+      _incident_nets.cbegin() + hypernode(u + 1).firstEntry());
   }
 
   // ! Returns a range to loop over the pins of hyperedge e.
   IteratorRange<IncidenceIterator> pins(const HyperedgeID e) const {
-    ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
     const Hyperedge& he = hyperedge(e);
     return IteratorRange<IncidenceIterator>(
       _incidence_array.cbegin() + he.firstEntry(),
       _incidence_array.cbegin() + he.firstInvalidEntry());
   }
 
-    // ####################### Hypernode Information #######################
+    // ####################### Node Information #######################
 
   // ! Weight of a vertex
   HypernodeWeight nodeWeight(const HypernodeID u) const {
@@ -581,15 +536,13 @@ class StaticGraph {
   }
 
   // ! Sets the weight of a vertex
-  void setNodeWeight(const HypernodeID u, const HypernodeWeight weight) {
-    ASSERT(!hypernode(u).isDisabled(), "Hypernode" << u << "is disabled");
+  void setHypernodeWeight(const HypernodeID u, const HypernodeWeight weight) {
     return hypernode(u).setWeight(weight);
   }
 
   // ! Degree of a hypernode
   HyperedgeID nodeDegree(const HypernodeID u) const {
-    ASSERT(!hypernode(u).isDisabled(), "Hypernode" << u << "is disabled");
-    return hypernode(u).size();
+    return hypernode(u + 1).firstEntry() - hypernode(u).firstEntry();
   }
 
   // ! Returns, whether a hypernode is enabled or not
@@ -597,53 +550,33 @@ class StaticGraph {
     return !hypernode(u).isDisabled();
   }
 
-  // ! Enables a hypernode (must be disabled before)
-  void enableHypernode(const HypernodeID u) {
-    hypernode(u).enable();
-  }
-
-  // ! Disables a hypernode (must be enabled before)
-  void disableHypernode(const HypernodeID u) {
-    hypernode(u).disable();
-  }
-
-  // ! Removes a hypernode (must be enabled before)
-  void removeHypernode(const HypernodeID u) {
-    hypernode(u).disable();
-    ++_num_removed_hypernodes;
-  }
-
   // ! Removes a degree zero hypernode
   void removeDegreeZeroHypernode(const HypernodeID u) {
     ASSERT(nodeDegree(u) == 0);
-    _removed_degree_zero_hn_weight += nodeWeight(u);
-    removeHypernode(u);
+    hypernode(u).disable();
+    ++_num_removed_hypernodes;
   }
 
   // ! Restores a degree zero hypernode
   void restoreDegreeZeroHypernode(const HypernodeID u) {
     hypernode(u).enable();
     ASSERT(nodeDegree(u) == 0);
-    _removed_degree_zero_hn_weight -= nodeWeight(u);
   }
 
   // ####################### Hyperedge Information #######################
 
   // ! Weight of a hyperedge
   HypernodeWeight edgeWeight(const HyperedgeID e) const {
-    ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
     return hyperedge(e).weight();
   }
 
   // ! Sets the weight of a hyperedge
   void setEdgeWeight(const HyperedgeID e, const HyperedgeWeight weight) {
-    ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
     return hyperedge(e).setWeight(weight);
   }
 
   // ! Number of pins of a hyperedge
   HypernodeID edgeSize(const HyperedgeID e) const {
-    ASSERT(!hyperedge(e).isDisabled(), "Hyperedge" << e << "is disabled");
     return hyperedge(e).size();
   }
 
@@ -654,17 +587,12 @@ class StaticGraph {
 
   // ! Returns, whether a hyperedge is enabled or not
   bool edgeIsEnabled(const HyperedgeID e) const {
-    return !hyperedge(e).isDisabled();
+    return true;
   }
 
   // ! Enables a hyperedge (must be disabled before)
   void enableHyperedge(const HyperedgeID e) {
-    hyperedge(e).enable();
-  }
-
-  // ! Disabled a hyperedge (must be enabled before)
-  void disableHyperedge(const HyperedgeID e) {
-    hyperedge(e).disable();
+    ERROR("enableHyperedge() is not supported in static graph");
   }
 
   // ! Community id which hypernode u is assigned to
@@ -693,14 +621,14 @@ class StaticGraph {
                             const TaskGroupID /* task_group_id */);
 
   bool registerContraction(const HypernodeID, const HypernodeID) {
-    ERROR("registerContraction(u, v) is not supported in static hypergraph");
+    ERROR("registerContraction(u, v) is not supported in static graph");
     return false;
   }
 
   size_t contract(const HypernodeID,
                   const HypernodeWeight max_node_weight = std::numeric_limits<HypernodeWeight>::max()) {
     unused(max_node_weight);
-    ERROR("contract(v, max_node_weight) is not supported in static hypergraph");
+    ERROR("contract(v, max_node_weight) is not supported in static graph");
     return 0;
   }
 
@@ -709,31 +637,15 @@ class StaticGraph {
                   const UncontractionFunction& case_two_func = NOOP_BATCH_FUNC) {
     unused(case_one_func);
     unused(case_two_func);
-    ERROR("uncontract(batch) is not supported in static hypergraph");
+    ERROR("uncontract(batch) is not supported in static graph");
   }
 
   VersionedBatchVector createBatchUncontractionHierarchy(const size_t) {
-    ERROR("createBatchUncontractionHierarchy(task_group_id, batch_size) is not supported in static hypergraph");
+    ERROR("createBatchUncontractionHierarchy(task_group_id, batch_size) is not supported in static graph");
     return { };
   }
 
   // ####################### Remove / Restore Hyperedges #######################
-
-  /*!
-  * Removes a hyperedge from the hypergraph. This includes the removal of he from all
-  * of its pins and to disable the hyperedge.
-  *
-  * NOTE, this function is not thread-safe and should only be called in a single-threaded
-  * setting.
-  */
-  void removeEdge(const HyperedgeID he) {
-    ASSERT(edgeIsEnabled(he), "Hyperedge" << he << "is disabled");
-    for ( const HypernodeID& pin : pins(he) ) {
-      removeIncidentEdgeFromHypernode(he, pin);
-    }
-    ++_num_removed_hyperedges;
-    disableHyperedge(he);
-  }
 
   /*!
   * Removes a hyperedge from the hypergraph. This includes the removal of he from all
@@ -744,37 +656,23 @@ class StaticGraph {
   * setting.
   */
   void removeLargeEdge(const HyperedgeID he) {
-    ASSERT(edgeIsEnabled(he), "Hyperedge" << he << "is disabled");
-    const size_t incidence_array_start = hyperedge(he).firstEntry();
-    const size_t incidence_array_end = hyperedge(he).firstInvalidEntry();
-    tbb::parallel_for(incidence_array_start, incidence_array_end, [&](const size_t pos) {
-      const HypernodeID pin = _incidence_array[pos];
-      removeIncidentEdgeFromHypernode(he, pin);
-    });
-    disableHyperedge(he);
+    ERROR("removeLargeEdge() is not supported in static graph");
   }
 
   /*!
    * Restores a large hyperedge previously removed from the hypergraph.
    */
   void restoreLargeEdge(const HyperedgeID& he) {
-    ASSERT(!edgeIsEnabled(he), "Hyperedge" << he << "is enabled");
-    enableHyperedge(he);
-    const size_t incidence_array_start = hyperedge(he).firstEntry();
-    const size_t incidence_array_end = hyperedge(he).firstInvalidEntry();
-    tbb::parallel_for(incidence_array_start, incidence_array_end, [&](const size_t pos) {
-      const HypernodeID pin = _incidence_array[pos];
-      insertIncidentEdgeToHypernode(he, pin);
-    });
+    ERROR("restoreLargeEdge() is not supported in static graph");
   }
 
   parallel::scalable_vector<ParallelHyperedge> removeSinglePinAndParallelHyperedges() {
-    ERROR("removeSinglePinAndParallelHyperedges() is not supported in static hypergraph");
+    ERROR("removeSinglePinAndParallelHyperedges() is not supported in static graph");
     return { };
   }
 
   void restoreSinglePinAndParallelNets(const parallel::scalable_vector<ParallelHyperedge>&) {
-    ERROR("restoreSinglePinAndParallelNets(hes_to_restore) is not supported in static hypergraph");
+    ERROR("restoreSinglePinAndParallelNets(hes_to_restore) is not supported in static graph");
   }
 
   // ####################### Initialization / Reset Functions #######################
@@ -821,7 +719,7 @@ class StaticGraph {
 
     // ! Only for testing
   bool verifyIncidenceArrayAndIncidentNets() {
-    ERROR("verifyIncidenceArrayAndIncidentNets() not supported in static hypergraph");
+    ERROR("verifyIncidenceArrayAndIncidentNets() not supported in static graph");
     return false;
   }
 
@@ -833,26 +731,24 @@ class StaticGraph {
             typename HypergraphFactory>
   friend class PartitionedHypergraph;
 
-  // ####################### Hypernode Information #######################
+  // ####################### Node Information #######################
 
   // ! Accessor for hypernode-related information
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE const Hypernode& hypernode(const HypernodeID u) const {
-    ASSERT(u <= _num_hypernodes, "Hypernode" << u << "does not exist");
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE const Node& hypernode(const HypernodeID u) const {
+    ASSERT(u <= _num_hypernodes, "Node" << u << "does not exist");
     return _hypernodes[u];
   }
 
   // ! To avoid code duplication we implement non-const version in terms of const version
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE Hypernode& hypernode(const HypernodeID u) {
-    return const_cast<Hypernode&>(static_cast<const StaticGraph&>(*this).hypernode(u));
+  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE Node& hypernode(const HypernodeID u) {
+    return const_cast<Node&>(static_cast<const StaticGraph&>(*this).hypernode(u));
   }
 
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE IteratorRange<IncidentNetsIterator> incident_nets_of(const HypernodeID u,
                                                                                           const size_t pos = 0) const {
-    ASSERT(!hypernode(u).isDisabled(), "Hypernode" << u << "is disabled");
-    const Hypernode& hn = hypernode(u);
     return IteratorRange<IncidentNetsIterator>(
-      _incident_nets.cbegin() + hn.firstEntry() + pos,
-      _incident_nets.cbegin() + hn.firstInvalidEntry());
+      _incident_nets.cbegin() + hypernode(u).firstEntry() + pos,
+      _incident_nets.cbegin() + hypernode(u + 1).firstEntry());
   }
 
   // ####################### Hyperedge Information #######################
@@ -868,43 +764,6 @@ class StaticGraph {
     return const_cast<Hyperedge&>(static_cast<const StaticGraph&>(*this).hyperedge(e));
   }
 
-  // ####################### Remove / Restore Hyperedges #######################
-
-  // ! Removes hyperedge e from the incident nets of vertex hn
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void removeIncidentEdgeFromHypernode(const HyperedgeID e,
-                                                                          const HypernodeID u) {
-    using std::swap;
-    ASSERT(!hypernode(u).isDisabled(), "Hypernode" << u << "is disabled");
-
-    Hypernode& hn = hypernode(u);
-    size_t incident_nets_pos = hn.firstEntry();
-    for ( ; incident_nets_pos < hn.firstInvalidEntry(); ++incident_nets_pos ) {
-      if ( _incident_nets[incident_nets_pos] == e ) {
-        break;
-      }
-    }
-    ASSERT(incident_nets_pos < hn.firstInvalidEntry());
-    swap(_incident_nets[incident_nets_pos], _incident_nets[hn.firstInvalidEntry() - 1]);
-    hn.setSize(hn.size() - 1);
-  }
-
-  // ! Inserts hyperedge he to incident nets array of vertex hn
-  MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE void insertIncidentEdgeToHypernode(const HyperedgeID e,
-                                                                        const HypernodeID u) {
-    Hypernode& hn = hypernode(u);
-    ASSERT(!hn.isDisabled(), "Hypernode" << u << "is disabled");
-    HEAVY_REFINEMENT_ASSERT(std::count(_incident_nets.cbegin() + hn.firstEntry(),
-                                       _incident_nets.cbegin() + hn.firstInvalidEntry(), e) == 0,
-                        "HN" << u << "is already connected to HE" << e);
-    ASSERT(std::find(_incident_nets.cbegin() + hn.firstInvalidEntry(),
-                     _incident_nets.cbegin() + hypernode(u + 1).firstEntry(), e) !=
-           _incident_nets.cbegin() + hypernode(u + 1).firstEntry(),
-           "HE" << e << "was never connected to HN" << u);
-
-    _incident_nets[hn.firstInvalidEntry()] = e;
-    hn.setSize(hn.size() + 1);
-  }
-
   // ! Allocate the temporary contraction buffer
   void allocateTmpContractionBuffer() {
     if ( !_tmp_contraction_buffer ) {
@@ -917,8 +776,6 @@ class StaticGraph {
   HypernodeID _num_hypernodes;
   // ! Number of removed hypernodes
   HypernodeID _num_removed_hypernodes;
-  // ! Number of removed degree zero hypernodes
-  HypernodeWeight _removed_degree_zero_hn_weight;
   // ! Number of hyperedges
   HyperedgeID _num_hyperedges;
   // ! Number of removed hyperedges
@@ -932,8 +789,8 @@ class StaticGraph {
   // ! Total weight of hypergraph
   HypernodeWeight _total_weight;
 
-  // ! Hypernodes
-  Array<Hypernode> _hypernodes;
+  // ! Nodes
+  Array<Node> _hypernodes;
   // ! Pins of hyperedges
   IncidentNets _incident_nets;
   // ! Hyperedges

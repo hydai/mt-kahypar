@@ -105,7 +105,6 @@ namespace mt_kahypar::ds {
     auto setup_hyperedges = [&] {
       tbb::parallel_for(ID(0), num_hyperedges, [&](const size_t pos) {
         StaticGraph::Hyperedge& hyperedge = hypergraph._hyperedges[pos];
-        hyperedge.enable();
         hyperedge.setFirstEntry(pin_prefix_sum[pos]);
         hyperedge.setSize(pin_prefix_sum.value(pos));
         if ( hyperedge_weight ) {
@@ -129,10 +128,9 @@ namespace mt_kahypar::ds {
 
     auto setup_hypernodes = [&] {
       tbb::parallel_for(ID(0), num_hypernodes, [&](const size_t pos) {
-        StaticGraph::Hypernode& hypernode = hypergraph._hypernodes[pos];
+        StaticGraph::Node& hypernode = hypergraph._hypernodes[pos];
         hypernode.enable();
         hypernode.setFirstEntry(incident_net_prefix_sum[pos]);
-        hypernode.setSize(incident_net_prefix_sum.value(pos));
         if ( hypernode_weight ) {
           hypernode.setWeight(hypernode_weight[pos]);
         }
@@ -145,20 +143,20 @@ namespace mt_kahypar::ds {
 
     tbb::parallel_invoke(setup_hyperedges, setup_hypernodes, init_communities);
 
+    // Add Sentinels
+    hypergraph._hypernodes.back() = StaticGraph::Node(hypergraph._incident_nets.size());
+    hypergraph._hyperedges.back() = StaticGraph::Hyperedge(hypergraph._incidence_array.size());
+
     if (stable_construction_of_incident_edges) {
       // sort incident hyperedges of each node, so their ordering is independent of scheduling (and the same as a typical sequential implementation)
       tbb::parallel_for(ID(0), num_hypernodes, [&](HypernodeID u) {
         auto b = hypergraph._incident_nets.begin() + hypergraph.hypernode(u).firstEntry();
-        auto e = hypergraph._incident_nets.begin() + hypergraph.hypernode(u).firstInvalidEntry();
+        auto e = hypergraph._incident_nets.begin() + hypergraph.hypernode(u + 1).firstEntry();
         std::sort(b, e);
       });
     }
 
-    // Add Sentinels
-    hypergraph._hypernodes.back() = StaticGraph::Hypernode(hypergraph._incident_nets.size());
-    hypergraph._hyperedges.back() = StaticGraph::Hyperedge(hypergraph._incidence_array.size());
-
-    hypergraph.computeAndSetTotalNodeWeight(task_group_id);
+    hypergraph.computeAndSetTotalHypernodeWeight(task_group_id);
 
     utils::Timer::instance().stop_timer("setup_hypergraph");
     return hypergraph;
