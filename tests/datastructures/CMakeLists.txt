@@ -25,3 +25,11 @@ target_sources(mt_kahypar_strong_tests PRIVATE
         incident_net_array_test.cc
         nlevel_smoke_test.cc
 )
+
+target_sources(mt_kahypar_fast_graph_tests PRIVATE
+        static_hypergraph_test.cc
+        partitioned_hypergraph_test.cc
+        delta_partitioned_hypergraph_test.cc
+        partitioned_hypergraph_smoke_test.cc
+        gain_updates_test.cc
+)
