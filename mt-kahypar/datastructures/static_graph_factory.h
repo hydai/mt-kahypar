@@ -48,7 +48,7 @@ class StaticGraphFactory {
   static std::pair<StaticGraph,
           parallel::scalable_vector<HypernodeID> > compactify(const TaskGroupID ,
                                                               const StaticGraph&)
-                                                              { ERROR("Compactify not implemented for static Graph."); }
+                                                              { ERROR("Compactify not implemented for static graph."); }
 
  private:
   StaticGraphFactory() { }
