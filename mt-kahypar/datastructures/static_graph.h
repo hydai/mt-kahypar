@@ -560,13 +560,15 @@ class StaticGraph {
 
   // ! Iterates in parallel over all active edges and calls function f
   // ! for each net
+  // TODO
   template<typename F>
   void doParallelForAllEdges(const F& f) const {
-    tbb::parallel_for(ID(0), _num_edges, [&](const HyperedgeID& he) {
-      if ( edgeIsEnabled(he) ) {
-        f(he);
-      }
-    });
+    ERROR("Not supported yet.");
+    // tbb::parallel_for(ID(0), _num_edges, [&](const HyperedgeID& he) {
+    //   if ( edgeIsEnabled(he) ) {
+    //     f(he);
+    //   }
+    // });
   }
 
   // ! Returns a range of the active nodes of the hypergraph
@@ -606,7 +608,7 @@ class StaticGraph {
   }
 
   // ! Sets the weight of a vertex
-  void setHypernodeWeight(const HypernodeID u, const HypernodeWeight weight) {
+  void setNodeWeight(const HypernodeID u, const HypernodeWeight weight) {
     return node(u).setWeight(weight);
   }
 
@@ -648,7 +650,7 @@ class StaticGraph {
 
   // ! Number of pins of a hyperedge
   HypernodeID edgeSize(const HyperedgeID e) const {
-    ASSERT(e <= _num_edges, "Hyperedge" << e << "does not exist");
+    ASSERT(e <= _edges.size(), "Hyperedge" << e << "does not exist");
     unused(e);
     return 2;
   }
@@ -829,13 +831,13 @@ class StaticGraph {
 
   // ! Accessor for hyperedge-related information
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE const Edge& edge(const HyperedgeID e) const {
-    ASSERT(e <= _num_edges, "Hyperedge" << e << "does not exist");
+    ASSERT(e <= _edges.size(), "Hyperedge" << e << "does not exist");
     return _edges[e];
   }
 
   // ! Accessor for hyperedge-related information
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE Edge& edge(const HyperedgeID e) {
-    ASSERT(e <= _num_edges, "Hyperedge" << e << "does not exist");
+    ASSERT(e <= _edges.size(), "Hyperedge" << e << "does not exist");
     return _edges[e];
   }
 
