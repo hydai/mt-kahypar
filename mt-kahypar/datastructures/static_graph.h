@@ -293,11 +293,10 @@ class StaticGraph {
      * \param id The index of the element the pointer points to
      * \param max_id The maximum index allowed
      */
-    EdgeIterator(const Array<Edge>& edges, HyperedgeID id, HyperedgeID max_id) :
+    EdgeIterator(const Array<Edge>& edges, HyperedgeID id) :
       _id(id),
-      _max_id(max_id),
       _edges(edges) {
-      if (_id != _max_id && !currentEdgeIsValid()) {
+      if (_id < _edges.get().size() && !currentEdgeIsValid()) {
         operator++ ();
       }
     }
@@ -309,10 +308,10 @@ class StaticGraph {
 
     // ! Prefix increment. The iterator advances to the next valid element.
     EdgeIterator & operator++ () {
-      ASSERT(_id < _max_id);
+      ASSERT(_id < _edges.get().size());
       do {
         ++_id;
-      } while (_id < _max_id && !currentEdgeIsValid());
+      } while (_id < _edges.get().size() && !currentEdgeIsValid());
       return *this;
     }
 
@@ -336,15 +335,12 @@ class StaticGraph {
       const Edge& edge = _edges.get()[_id];
       const Edge& backwards = _edges.get()[edge.backwardsEdge()];
       ASSERT(edge.weight() == backwards.weight() &&
-             backwards.target() == _id &&
              edge.target() != backwards.target());
       return backwards.target() < edge.target();
     }
 
     // Handle to the edge the iterator currently points to
     HyperedgeID _id = 0;
-    // Maximum allowed index
-    HyperedgeID _max_id = 0;
     // edge array of the graph
     std::reference_wrapper<const Array<Edge>> _edges;
   };
@@ -416,7 +412,7 @@ class StaticGraph {
   struct TmpContractionBuffer {
     explicit TmpContractionBuffer(const HypernodeID num_hypernodes,
                                   const HyperedgeID num_hyperedges,
-                                  const HyperedgeID num_pins) {
+                                  const HyperedgeID /* num_pins */) {
       tbb::parallel_invoke([&] {
         mapping.resize("Coarsening", "mapping", num_hypernodes);
       }, [&] {
@@ -583,8 +579,8 @@ class StaticGraph {
   // ! Returns a range of the active edges of the hypergraph
   IteratorRange<HyperedgeIterator> edges() const {
     return IteratorRange<HyperedgeIterator>(
-      HyperedgeIterator(_edges, ID(0), _num_edges),
-      HyperedgeIterator(_edges, _num_edges, _num_edges));
+      HyperedgeIterator(_edges, ID(0)),
+      HyperedgeIterator(_edges, _edges.size()));
   }
 
   // ! Returns a range to loop over the incident nets of hypernode u.
@@ -653,6 +649,7 @@ class StaticGraph {
   // ! Number of pins of a hyperedge
   HypernodeID edgeSize(const HyperedgeID e) const {
     ASSERT(e <= _num_edges, "Hyperedge" << e << "does not exist");
+    unused(e);
     return 2;
   }
 
@@ -662,12 +659,12 @@ class StaticGraph {
   }
 
   // ! Returns, whether a hyperedge is enabled or not
-  bool edgeIsEnabled(const HyperedgeID e) const {
+  bool edgeIsEnabled(const HyperedgeID) const {
     return true;
   }
 
   // ! Enables a hyperedge (must be disabled before)
-  void enableHyperedge(const HyperedgeID e) {
+  void enableHyperedge(const HyperedgeID) {
     ERROR("enableHyperedge() is not supported in static graph");
   }
 
@@ -731,14 +728,14 @@ class StaticGraph {
   * NOTE, this function is not thread-safe and should only be called in a single-threaded
   * setting.
   */
-  void removeLargeEdge(const HyperedgeID he) {
+  void removeLargeEdge(const HyperedgeID) {
     ERROR("removeLargeEdge() is not supported in static graph");
   }
 
   /*!
    * Restores a large hyperedge previously removed from the hypergraph.
    */
-  void restoreLargeEdge(const HyperedgeID& he) {
+  void restoreLargeEdge(const HyperedgeID&) {
     ERROR("restoreLargeEdge() is not supported in static graph");
   }
 
