@@ -254,15 +254,66 @@ namespace mt_kahypar::ds {
 
     utils::Timer::instance().stop_timer("remove_parallel_edges");
 
+    // #################### STAGE 4 ####################
+    // Coarsened graph is constructed here by writting data from temporary
+    // buffers to corresponding members in coarsened graph. We compute
+    // a prefix sum over the vertex sizes to determine the start index
+    // of the edges in the edge array, removing all invalid edges.
+    // Afterwards, we additionally need to reconstruct the backwards edges
+    // (hopefully not necessary anymore in the future).
+    utils::Timer::instance().start_timer("contract_hypergraph", "Contract Hypergraph");
+
     StaticGraph hypergraph;
 
+    // Compute number of edges in coarse graph (those flagged as valid)
+    parallel::TBBPrefixSum<HyperedgeID, Array> degree_mapping(node_sizes);
+    tbb::parallel_scan(tbb::blocked_range<size_t>(
+            0UL, static_cast<size_t>(coarsened_num_nodes)), degree_mapping);
+    const HyperedgeID coarsened_num_edges = degree_mapping.total_sum();
+    hypergraph._num_nodes = coarsened_num_nodes;
+    hypergraph._num_edges = coarsened_num_edges / 2;
+
+    tbb::parallel_invoke([&] {
+      utils::Timer::instance().start_timer("setup_edges", "Setup Edges", true);
+      // Copy edges
+      hypergraph._edges.resize(coarsened_num_edges);
+      tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HyperedgeID& coarse_node) {
+        const HyperedgeID tmp_edges_start = tmp_nodes[coarse_node].firstEntry();
+        const HyperedgeID edges_start = degree_mapping[coarse_node];
+        // TODO: good idea? Better handle high degree nodes separately?
+        tbb::parallel_for(ID(0), degree_mapping.value(coarse_node), [&](const HyperedgeID& index) {
+          ASSERT(tmp_edges_start + index < tmp_edges.size() && edges_start + index < hypergraph._edges.size());
+          const TmpEdgeInformation& tmp_edge = tmp_edges[tmp_edges_start + index];
+          Edge& edge = hypergraph._edges[edges_start + index];          
+          edge.setTarget(tmp_edge.getTarget());
+          edge.setWeight(tmp_edge.getWeight());
+        });
+      });
+      utils::Timer::instance().stop_timer("setup_edges");
+    }, [&] {
+      hypergraph._nodes.resize(coarsened_num_nodes + 1);
+      tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HyperedgeID& coarse_node) {
+        Node& node = hypergraph._nodes[coarse_node];
+        node.enable();
+        node.setFirstEntry(degree_mapping[coarse_node]);
+        node.setWeight(tmp_nodes[coarse_node].weight());
+      });
+      hypergraph._nodes.back() = Node(static_cast<size_t>(coarsened_num_edges));
+    }, [&] {
+      hypergraph._community_ids.resize(coarsened_num_nodes);
+      doParallelForAllNodes([&](HypernodeID fine_node) {
+        hypergraph.setCommunityID(map_to_coarse_graph(fine_node), communityID(fine_node));
+      });
+    });
+
+    // TODO: set backward edges
+
+    utils::Timer::instance().stop_timer("contract_hypergraph");
 
 
-
-
-
-
-
+    hypergraph._total_weight = _total_weight;
+    hypergraph._tmp_contraction_buffer = _tmp_contraction_buffer;
+    _tmp_contraction_buffer = nullptr;
     return hypergraph;
   }
 

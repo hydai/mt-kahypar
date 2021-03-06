@@ -112,11 +112,11 @@ class StaticGraph {
       _begin = begin;
     }
 
-    HyperedgeWeight weight() const {
+    HypernodeWeight weight() const {
       return _weight;
     }
 
-    void setWeight(HyperedgeWeight weight) {
+    void setWeight(HypernodeWeight weight) {
       ASSERT(!isDisabled());
       _weight = weight;
     }
@@ -499,7 +499,7 @@ class StaticGraph {
     _total_weight(0),
     _nodes(),
     _edges(),
-    _community_ids(0),
+    _community_ids(),
     _tmp_contraction_buffer(nullptr) { }
 
   StaticGraph(const StaticGraph&) = delete;
@@ -731,7 +731,7 @@ class StaticGraph {
    * \param task_group_id Task Group ID
    */
   StaticGraph contract(parallel::scalable_vector<HypernodeID>& communities,
-                            const TaskGroupID /* task_group_id */);
+                       const TaskGroupID /* task_group_id */);
 
   bool registerContraction(const HypernodeID, const HypernodeID) {
     ERROR("registerContraction(u, v) is not supported in static graph");
