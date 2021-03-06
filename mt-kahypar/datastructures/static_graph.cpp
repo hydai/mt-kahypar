@@ -176,8 +176,83 @@ namespace mt_kahypar::ds {
 
     utils::Timer::instance().stop_timer("tmp_copy_incident_edges");
 
+    // #################### STAGE 3 ####################
+    // In this step, we deduplicate parallel edges. To this end, the incident edges
+    // of each vertex are sorted and aggregated. However, there is a special treatment
+    // for vertices with extremely high degree, as they might become a bottleneck
+    // otherwise. Afterwards, for all parallel edges all but one are invalidated and
+    // the weight of the remaining edge is set to the sum of the weights.
+    utils::Timer::instance().start_timer("remove_parallel_edges", "Remove Parallel Edges", true);
 
+    // A list of high degree vertices that are processed afterwards
+    parallel::scalable_vector<HypernodeID> high_degree_vertices;
+    std::mutex high_degree_vertex_mutex;
+    tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HypernodeID& coarse_node) {
+      // Remove duplicates
+      const size_t incident_edges_start = tmp_incident_edges_prefix_sum[coarse_node];
+      const size_t incident_edges_end = tmp_incident_edges_prefix_sum[coarse_node + 1];
+      const size_t tmp_degree = incident_edges_end - incident_edges_start;
+      if ( tmp_degree <= HIGH_DEGREE_CONTRACTION_THRESHOLD ) {
+        std::sort(tmp_edges.begin() + incident_edges_start, tmp_edges.begin() + incident_edges_end,
+                  [](const TmpEdgeInformation& e1, const TmpEdgeInformation& e2) {
+                    return e1._target < e2._target;
+                  });
 
+        // Deduplicate and aggregate weights
+        // <-- deduplicated --> <-- already processed --> <-- to be processed --> <-- invalid edges -->
+        //                    ^                         ^
+        // valid_edge_index ---        tmp_edge_index ---
+        size_t valid_edge_index = incident_edges_start;
+        size_t tmp_edge_index = incident_edges_start + 1;
+        while (tmp_edges[tmp_edge_index].isValid() && tmp_edge_index < incident_edges_end) {
+          HEAVY_COARSENING_ASSERT(
+            [&](){
+              size_t i = incident_edges_start;
+              for (; i <= valid_edge_index; ++i) {
+                if (!tmp_edges[i].isValid()) {
+                  return false;
+                } else if ((i + 1 <= valid_edge_index) &&
+                  tmp_edges[i].getTarget() >= tmp_edges[i + 1].getTarget()) {
+                  return false;
+                }
+              }
+              for(; i < tmp_edge_index; ++i) {
+                if (tmp_edges[i].isValid()) {
+                  return false;
+                }
+              }
+              return true;
+            }(),
+            "Invariant violated while deduplicating incident edges!"
+          );
+
+          TmpEdgeInformation& valid_edge = tmp_edges[valid_edge_index];
+          TmpEdgeInformation& next_edge = tmp_edges[tmp_edge_index];
+          if (next_edge.isValid()) {
+            if (valid_edge.getTarget() == next_edge.getTarget()) {
+              valid_edge.addWeight(next_edge.getWeight());
+              next_edge.invalidate();
+            } else {
+              ++valid_edge_index;
+              std::swap(tmp_edges[valid_edge_index], next_edge);
+            }
+            ++tmp_edge_index;
+          }
+        }
+        const HyperedgeID contracted_size = tmp_edges[valid_edge_index].isValid() ? 
+                                            (valid_edge_index - incident_edges_start + 1) : 0;
+        node_sizes[coarse_node] = contracted_size;
+      } else {
+        std::lock_guard<std::mutex> lock(high_degree_vertex_mutex);
+        high_degree_vertices.push_back(coarse_node);
+      }
+      tmp_nodes[coarse_node].setWeight(node_weights[coarse_node]);
+      tmp_nodes[coarse_node].setFirstEntry(incident_edges_start);
+    });
+
+    // TODO: high degree vertices
+
+    utils::Timer::instance().stop_timer("remove_parallel_edges");
 
     StaticGraph hypergraph;
 

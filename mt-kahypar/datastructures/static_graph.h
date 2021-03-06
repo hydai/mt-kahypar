@@ -405,8 +405,8 @@ class StaticGraph {
   static_assert(std::is_trivially_copyable<Node>::value, "Node is not trivially copyable");
   static_assert(std::is_trivially_copyable<Edge>::value, "Hyperedge is not trivially copyable");
 
-  class TmpEdgeInformation {
-   public:
+ private:
+  struct TmpEdgeInformation {
     // ! invalid edge
     TmpEdgeInformation() :
       _target(kInvalidHyperedge),
@@ -443,7 +443,6 @@ class StaticGraph {
       _valid_or_weight += weight;
     }
 
-   private:
     HyperedgeID _target;
     HyperedgeWeight _valid_or_weight;
   };
