@@ -78,7 +78,7 @@ namespace mt_kahypar::ds {
     ASSERT(static_cast<size_t>(_num_nodes) <= node_sizes.size());
     ASSERT(static_cast<size_t>(_num_nodes) <= tmp_num_incident_edges.size());
     ASSERT(static_cast<size_t>(_num_nodes) <= node_weights.size());
-    ASSERT(static_cast<size_t>(_num_edges) <= tmp_edges.size());
+    ASSERT(static_cast<size_t>(2 * _num_edges) <= tmp_edges.size());
 
 
     // #################### STAGE 1 ####################
@@ -167,7 +167,7 @@ namespace mt_kahypar::ds {
         const HypernodeID target = map_to_coarse_graph(edge.target());
         const bool is_valid = target != coarse_node;
         if (is_valid) {
-          tmp_edges[coarse_edges_pos + i] = TmpEdgeInformation(edge.target(), edge.weight());
+          tmp_edges[coarse_edges_pos + i] = TmpEdgeInformation(target, edge.weight());
         } else {
           tmp_edges[coarse_edges_pos + i] = TmpEdgeInformation();
         }
@@ -243,7 +243,7 @@ namespace mt_kahypar::ds {
   void StaticGraph::memoryConsumption(utils::MemoryTreeNode* parent) const {
     ASSERT(parent);
     parent->addChild("Hypernodes", sizeof(Node) * _nodes.size());
-    parent->addChild("Hyperedges", sizeof(Edge) * _edges.size());
+    parent->addChild("Hyperedges", 2 * sizeof(Edge) * _edges.size());
     parent->addChild("Communities", sizeof(PartitionID) * _community_ids.capacity());
   }
 

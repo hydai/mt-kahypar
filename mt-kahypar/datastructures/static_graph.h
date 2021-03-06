@@ -466,7 +466,7 @@ class StaticGraph {
       }, [&] {
         node_weights.resize("Coarsening", "node_weights", num_nodes);
       }, [&] {
-        tmp_edges.resize("Coarsening", "tmp_edges", num_edges);
+        tmp_edges.resize("Coarsening", "tmp_edges", 2 * num_edges);
       });
     }
 
@@ -883,8 +883,7 @@ class StaticGraph {
   // ! Allocate the temporary contraction buffer
   void allocateTmpContractionBuffer() {
     if ( !_tmp_contraction_buffer ) {
-      _tmp_contraction_buffer = new TmpContractionBuffer(
-        _num_nodes, _num_edges, 2 * _num_edges);
+      _tmp_contraction_buffer = new TmpContractionBuffer(_num_nodes, _num_edges);
     }
   }
 
