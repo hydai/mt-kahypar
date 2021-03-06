@@ -525,10 +525,10 @@ class StaticHypergraph {
 
   // ! Iterates in parallel over all active edges and calls function f
   // ! for each net
-  template<typename F>
-  void doParallelForAllEdges(const F& f) {
-    static_cast<const StaticHypergraph&>(*this).doParallelForAllEdges(f);
-  }
+  // template<typename F>
+  // void doParallelForAllEdges(const F& f) {
+  //   static_cast<const StaticHypergraph&>(*this).doParallelForAllEdges(f);
+  // }
 
   // ! Iterates in parallel over all active edges and calls function f
   // ! for each net
