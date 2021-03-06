@@ -196,27 +196,19 @@ namespace mt_kahypar::ds {
   StaticGraph StaticGraph::copy(const TaskGroupID /* task_group_id */) {
     StaticGraph hypergraph;
 
-    hypergraph._num_hypernodes = _num_hypernodes;
-    hypergraph._num_removed_hypernodes = _num_removed_hypernodes;
-    hypergraph._num_hyperedges = _num_hyperedges;
+    hypergraph._num_nodes = _num_nodes;
+    hypergraph._num_removed_nodes = _num_removed_nodes;
+    hypergraph._num_edges = _num_edges;
     hypergraph._total_weight = _total_weight;
 
     tbb::parallel_invoke([&] {
-      hypergraph._hypernodes.resize(_hypernodes.size());
-      memcpy(hypergraph._hypernodes.data(), _hypernodes.data(),
-             sizeof(Hypernode) * _hypernodes.size());
+      hypergraph._nodes.resize(_nodes.size());
+      memcpy(hypergraph._nodes.data(), _nodes.data(),
+             sizeof(Node) * _nodes.size());
     }, [&] {
-      hypergraph._incident_nets.resize(_incident_nets.size());
-      memcpy(hypergraph._incident_nets.data(), _incident_nets.data(),
-             sizeof(HyperedgeID) * _incident_nets.size());
-    }, [&] {
-      hypergraph._hyperedges.resize(_hyperedges.size());
-      memcpy(hypergraph._hyperedges.data(), _hyperedges.data(),
-             sizeof(Hyperedge) * _hyperedges.size());
-    }, [&] {
-      hypergraph._incidence_array.resize(_incidence_array.size());
-      memcpy(hypergraph._incidence_array.data(), _incidence_array.data(),
-             sizeof(HypernodeID) * _incidence_array.size());
+      hypergraph._edges.resize(_edges.size());
+      memcpy(hypergraph._edges.data(), _edges.data(),
+             sizeof(Edge) * _edges.size());
     }, [&] {
       hypergraph._community_ids = _community_ids;
     });
@@ -227,24 +219,18 @@ namespace mt_kahypar::ds {
   StaticGraph StaticGraph::copy() {
     StaticGraph hypergraph;
 
-    hypergraph._num_hypernodes = _num_hypernodes;
-    hypergraph._num_removed_hypernodes = _num_removed_hypernodes;
-    hypergraph._num_hyperedges = _num_hyperedges;
+    hypergraph._num_nodes = _num_nodes;
+    hypergraph._num_removed_nodes = _num_removed_nodes;
+    hypergraph._num_edges = _num_edges;
     hypergraph._total_weight = _total_weight;
 
-    hypergraph._hypernodes.resize(_hypernodes.size());
-    memcpy(hypergraph._hypernodes.data(), _hypernodes.data(),
-           sizeof(Hypernode) * _hypernodes.size());
-    hypergraph._incident_nets.resize(_incident_nets.size());
-    memcpy(hypergraph._incident_nets.data(), _incident_nets.data(),
-           sizeof(HyperedgeID) * _incident_nets.size());
+    hypergraph._nodes.resize(_nodes.size());
+    memcpy(hypergraph._nodes.data(), _nodes.data(),
+           sizeof(Node) * _nodes.size());
 
-    hypergraph._hyperedges.resize(_hyperedges.size());
-    memcpy(hypergraph._hyperedges.data(), _hyperedges.data(),
-           sizeof(Hyperedge) * _hyperedges.size());
-    hypergraph._incidence_array.resize(_incidence_array.size());
-    memcpy(hypergraph._incidence_array.data(), _incidence_array.data(),
-           sizeof(HypernodeID) * _incidence_array.size());
+    hypergraph._edges.resize(_edges.size());
+    memcpy(hypergraph._edges.data(), _edges.data(),
+           sizeof(Edge) * _edges.size());
 
     hypergraph._community_ids = _community_ids;
 
@@ -256,21 +242,19 @@ namespace mt_kahypar::ds {
 
   void StaticGraph::memoryConsumption(utils::MemoryTreeNode* parent) const {
     ASSERT(parent);
-    parent->addChild("Hypernodes", sizeof(Hypernode) * _hypernodes.size());
-    parent->addChild("Incident Nets", sizeof(HyperedgeID) * _incident_nets.size());
-    parent->addChild("Hyperedges", sizeof(Hyperedge) * _hyperedges.size());
-    parent->addChild("Incidence Array", sizeof(HypernodeID) * _incidence_array.size());
+    parent->addChild("Hypernodes", sizeof(Node) * _nodes.size());
+    parent->addChild("Hyperedges", sizeof(Edge) * _edges.size());
     parent->addChild("Communities", sizeof(PartitionID) * _community_ids.capacity());
   }
 
   // ! Computes the total node weight of the hypergraph
   void StaticGraph::computeAndSetTotalNodeWeight(const TaskGroupID) {
-    _total_weight = tbb::parallel_reduce(tbb::blocked_range<HypernodeID>(ID(0), _num_hypernodes), 0,
+    _total_weight = tbb::parallel_reduce(tbb::blocked_range<HypernodeID>(ID(0), _num_nodes), 0,
                                          [this](const tbb::blocked_range<HypernodeID>& range, HypernodeWeight init) {
                                            HypernodeWeight weight = init;
                                            for (HypernodeID hn = range.begin(); hn < range.end(); ++hn) {
                                              if (nodeIsEnabled(hn)) {
-                                               weight += this->_hypernodes[hn].weight();
+                                               weight += this->_nodes[hn].weight();
                                              }
                                            }
                                            return weight;
