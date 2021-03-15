@@ -1,10 +1,10 @@
-add_executable(MtKaHyParFast kahypar.cc)
+add_executable(MtKaHyParFast kahypar.cc ../partition/preprocessing/community_detection/hyper_flow_instance.cpp ../partition/preprocessing/community_detection/hyper_flow_instance.h)
 target_link_libraries(MtKaHyParFast ${Boost_LIBRARIES})
 target_link_libraries(MtKaHyParFast pthread)
 set_property(TARGET MtKaHyParFast PROPERTY CXX_STANDARD 17)
 set_property(TARGET MtKaHyParFast PROPERTY CXX_STANDARD_REQUIRED ON)
 
-add_executable(MtKaHyParStrong kahypar.cc)
+add_executable(MtKaHyParStrong kahypar.cc ../partition/preprocessing/community_detection/hyper_flow_instance.cpp ../partition/preprocessing/community_detection/hyper_flow_instance.h)
 target_link_libraries(MtKaHyParStrong ${Boost_LIBRARIES})
 target_link_libraries(MtKaHyParStrong pthread)
 set_property(TARGET MtKaHyParStrong PROPERTY CXX_STANDARD 17)

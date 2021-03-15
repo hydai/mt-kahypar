@@ -26,6 +26,7 @@
 #include "mt-kahypar/partition/preprocessing/sparsification/degree_zero_hn_remover.h"
 #include "mt-kahypar/partition/preprocessing/sparsification/large_he_remover.h"
 #include "mt-kahypar/partition/preprocessing/community_detection/parallel_louvain.h"
+#include <mt-kahypar/partition/preprocessing/community_detection/natural_cut_detection.h>
 #include "mt-kahypar/utils/stats.h"
 #include "mt-kahypar/utils/timer.h"
 
@@ -108,12 +109,14 @@ namespace mt_kahypar {
       io::printTopLevelPreprocessingBanner(context);
 
       utils::Timer::instance().start_timer("community_detection", "Community Detection");
-      utils::Timer::instance().start_timer("construct_graph", "Construct Graph");
+      /*utils::Timer::instance().start_timer("construct_graph", "Construct Graph");
       Graph graph(hypergraph, context.preprocessing.community_detection.edge_weight_function);
-      utils::Timer::instance().stop_timer("construct_graph");
+      utils::Timer::instance().stop_timer("construct_graph");*/
       utils::Timer::instance().start_timer("perform_community_detection", "Perform Community Detection");
-      ds::Clustering communities = community_detection::run_parallel_louvain(graph, context);
+      /*ds::Clustering communities = community_detection::run_parallel_louvain(graph, context);
       graph.restrictClusteringToHypernodes(hypergraph, communities);
+      hypergraph.setCommunityIDs(std::move(communities));*/
+      ds::Clustering communities = community_detection::run_natural_cut_detection(hypergraph, context);
       hypergraph.setCommunityIDs(std::move(communities));
       utils::Timer::instance().stop_timer("perform_community_detection");
       utils::Timer::instance().stop_timer("community_detection");

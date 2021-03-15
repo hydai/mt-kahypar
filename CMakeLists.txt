@@ -106,7 +106,7 @@ if(KAHYPAR_USE_MINIMAL_BOOST)
   # glob boost sources
   file(GLOB MINI_BOOST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/external_tools/boost/src/boost/libs/program_options/src/*.cpp)
 
-  add_library(mini_boost STATIC ${MINI_BOOST_SOURCES})
+  add_library(mini_boost STATIC ${MINI_BOOST_SOURCES} mt-kahypar/partition/preprocessing/community_detection/natural_cut_detection.h mt-kahypar/partition/preprocessing/community_detection/natural_cut_detection.cpp)
   set_target_properties(mini_boost PROPERTIES LINKER_LANGUAGE CXX)
   set(Boost_LIBRARIES mini_boost)
 else()
