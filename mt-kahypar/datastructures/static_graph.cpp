@@ -284,7 +284,7 @@ namespace mt_kahypar::ds {
         tbb::parallel_for(ID(0), degree_mapping.value(coarse_node), [&](const HyperedgeID& index) {
           ASSERT(tmp_edges_start + index < tmp_edges.size() && edges_start + index < hypergraph._edges.size());
           const TmpEdgeInformation& tmp_edge = tmp_edges[tmp_edges_start + index];
-          Edge& edge = hypergraph._edges[edges_start + index];          
+          Edge& edge = hypergraph.edge(edges_start + index);          
           edge.setTarget(tmp_edge.getTarget());
           edge.setWeight(tmp_edge.getWeight());
         });
@@ -293,7 +293,7 @@ namespace mt_kahypar::ds {
     }, [&] {
       hypergraph._nodes.resize(coarsened_num_nodes + 1);
       tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HyperedgeID& coarse_node) {
-        Node& node = hypergraph._nodes[coarse_node];
+        Node& node = hypergraph.node(coarse_node);
         node.enable();
         node.setFirstEntry(degree_mapping[coarse_node]);
         node.setWeight(tmp_nodes[coarse_node].weight());
@@ -306,7 +306,20 @@ namespace mt_kahypar::ds {
       });
     });
 
-    // TODO: set backward edges
+    tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HyperedgeID& coarse_node) {
+      for (HyperedgeID id : hypergraph.incidentEdges(coarse_node)) {
+        const HypernodeID target = hypergraph.edge(id).target();
+        auto rev_start = hypergraph._edges.cbegin() + hypergraph.node(target).firstEntry();
+        auto rev_end = hypergraph._edges.cbegin() + hypergraph.node(target + 1).firstEntry();
+        auto rev_edge = std::lower_bound(rev_start, rev_end, Edge(coarse_node),
+                                         [](const Edge& e1, const Edge& e2) {
+                                           return e1.target() < e2.target();
+                                         });
+        ASSERT(rev_edge != rev_end);
+        ASSERT(rev_edge->target() == coarse_node);
+        rev_edge->setBackwardsEdge(id);
+      }
+    });
 
     utils::Timer::instance().stop_timer("contract_hypergraph");
 

@@ -277,12 +277,12 @@ TEST_F(AStaticGraph, ContractsCommunities1) {
   ASSERT_EQ(1, c_graph.edgeWeight(0));
   ASSERT_EQ(3, c_graph.edgeWeight(2));
 
-  // Verify Graph Structure
+  // Verify Graph Structure - note that each edge has two IDs
   verifyIncidentNets(c_graph, 0, { 0 });
   verifyIncidentNets(c_graph, 1, { 1, 2 });
   verifyIncidentNets(c_graph, 2, { 3 });
   verifyPins(c_graph, { 0 }, { {0, 1} });
-  verifyPins(c_graph, { 1 }, { {1, 2} });
+  verifyPins(c_graph, { 2 }, { {1, 2} });
 }
 
 }

@@ -76,13 +76,13 @@ class StaticGraph {
       _weight(1),
       _valid(false) { }
 
-    Node(const bool valid) :
+    explicit Node(const bool valid) :
       _begin(0),
       _weight(1),
       _valid(valid) { }
 
     // Sentinel Constructor
-    Node(const size_t begin) :
+    explicit Node(const size_t begin) :
       _begin(begin),
       _weight(1),
       _valid(false) { }
@@ -140,6 +140,11 @@ class StaticGraph {
 
     Edge() :
       _target(0),
+      _backwards_edge(0),
+      _weight(1) { }
+
+    explicit Edge(HypernodeID target) :
+      _target(target),
       _backwards_edge(0),
       _weight(1) { }
 
@@ -331,6 +336,7 @@ class StaticGraph {
     }
 
    private:
+    // TODO: this is not efficient (store source instead?)
     bool currentEdgeIsValid() const {
       const Edge& edge = _edges.get()[_id];
       const Edge& backwards = _edges.get()[edge.backwardsEdge()];
@@ -598,15 +604,18 @@ class StaticGraph {
 
   // ! Iterates in parallel over all active edges and calls function f
   // ! for each net
-  // TODO
   template<typename F>
   void doParallelForAllEdges(const F& f) const {
-    ERROR("Not supported yet.");
-    // tbb::parallel_for(ID(0), _num_edges, [&](const HyperedgeID& he) {
-    //   if ( edgeIsEnabled(he) ) {
-    //     f(he);
-    //   }
-    // });
+    // TODO: good idea?
+    tbb::parallel_for(ID(0), _num_nodes, [&](const HypernodeID& hn) {
+        const size_t edges_start = node(hn).firstEntry();
+        const size_t edges_end = node(hn + 1).firstEntry();
+        tbb::parallel_for(edges_start, edges_end, [&](const HyperedgeID& e) {
+          if ( edgeIsEnabled(e) && hn < edge(e).target() ) {
+            f(e);
+          }
+        });
+      });
   }
 
   // ! Returns a range of the active nodes of the hypergraph
