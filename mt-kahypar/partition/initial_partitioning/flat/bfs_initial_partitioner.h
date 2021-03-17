@@ -75,6 +75,7 @@ class BFSInitialPartitioner : public tbb::task {
                                      kahypar::ds::FastResetFlagArray<>& hyperedges_in_queue,
                                      const HyperedgeID he,
                                      const PartitionID block) {
+    // TODO(maas): fix
     hyperedges_in_queue.set(block * hypergraph.initialNumEdges() + he, true);
   }
 

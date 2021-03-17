@@ -51,6 +51,7 @@ class LabelPropagationRefiner final : public IRefiner {
     _active_nodes(),
     _active_node_was_moved(hypergraph.initialNumNodes(), uint8_t(false)),
     _next_active(hypergraph.initialNumNodes()),
+    // TODO(maas): fix
     _visited_he(hypergraph.initialNumEdges()) { }
 
   LabelPropagationRefiner(const LabelPropagationRefiner&) = delete;

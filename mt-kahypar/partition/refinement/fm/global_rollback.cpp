@@ -288,9 +288,11 @@ namespace mt_kahypar {
       // reset bits
       if (++round == std::numeric_limits<uint32_t>::max()) {
         // should never happen on practical inputs.
+      // TODO(maas): fix
         last_recalc_round.assign(phg.initialNumEdges(), CAtomic<uint32_t>(0));
       }
     } else{
+      // TODO(maas): fix
       tbb::parallel_for(0U, phg.initialNumEdges(), recalculate_and_distribute_for_hyperedge);
     }
   }

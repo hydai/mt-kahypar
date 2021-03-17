@@ -173,6 +173,7 @@ class SequentialTwoWayFmRefiner {
     _pq(context.partition.k),
     _border_vertices(phg.initialNumNodes()),
     _vertex_state(phg.initialNumNodes(), VertexState::INACTIVE),
+    // TODO(maas): fix
     _he_state(phg.initialNumEdges(), HEState::FREE) {
     ASSERT(_context.partition.k == 2);
     _pq.initialize(_phg.initialNumNodes());

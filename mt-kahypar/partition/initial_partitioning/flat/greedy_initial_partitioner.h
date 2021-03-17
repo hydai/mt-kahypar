@@ -212,6 +212,7 @@ class GreedyInitialPartitioner : public tbb::task {
     }
 
     // Insert all adjacent hypernodes of the moved vertex into PQ of block to
+    // TODO(maas): fix
     for ( const HyperedgeID& he : hypergraph.incidentEdges(hn)) {
       if ( !hyperedges_in_queue[to * hypergraph.initialNumEdges() + he] ) {
         for ( const HypernodeID& pin : hypergraph.pins(he) ) {

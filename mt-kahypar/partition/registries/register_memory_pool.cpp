@@ -32,6 +32,7 @@ namespace mt_kahypar {
 
   void register_memory_pool(const Hypergraph& hypergraph,
                             const Context& context) {
+    // TODO(maas): any problems here?
 
     // ########## Preprocessing Memory ##########
 

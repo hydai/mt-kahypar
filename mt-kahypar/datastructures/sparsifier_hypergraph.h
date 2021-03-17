@@ -267,6 +267,7 @@ class SparsifierHypergraph {
         _node_degrees.assign(_num_nodes, parallel::IntegralAtomicWrapper<HyperedgeID>(0));
       });
 
+      // TODO(maas): schlecht
       tbb::parallel_for(ID(0), hypergraph.initialNumEdges(), [&](const HyperedgeID he) {
         if ( hypergraph.edgeIsEnabled(he) ) {
           _hyperedge_weight[he] = hypergraph.edgeWeight(he);

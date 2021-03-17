@@ -180,6 +180,7 @@ namespace mt_kahypar::io {
     HypernodeID num_pins = hypergraph.initialNumPins();
     const double avg_he_size = internal::avgHyperedgeDegree(hypergraph);
     hypergraph.doParallelForAllEdges([&](const HyperedgeID& he) {
+      // TODO(maas): schlecht
       he_sizes[he] = hypergraph.edgeSize(he);
       he_weights[he] = hypergraph.edgeWeight(he);
     });
@@ -464,6 +465,7 @@ namespace mt_kahypar::io {
   }
 
   void printConnectedCutHyperedgeAnalysis(const PartitionedHypergraph& hypergraph) {
+    // TODO(maas): schlecht
     std::vector<bool> visited_he(hypergraph.initialNumEdges(), false);
     std::vector<HyperedgeWeight> connected_cut_hyperedges;
 

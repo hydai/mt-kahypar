@@ -355,6 +355,7 @@ class InitialPartitioningDataContainer {
     _local_kway_pq(_context.partition.k),
     _is_local_pq_initialized(false),
     _local_hn_visited(_context.partition.k * hypergraph.initialNumNodes()),
+    // TODO(maas): schlecht
     _local_he_visited(_context.partition.k * hypergraph.initialNumEdges()),
     _local_unassigned_hypernodes(),
     _local_unassigned_hypernode_pointer(std::numeric_limits<size_t>::max()),
@@ -409,6 +410,7 @@ class InitialPartitioningDataContainer {
     return _local_hn_visited.local();
   }
 
+  // TODO(maas): schlecht
   kahypar::ds::FastResetFlagArray<>& local_hyperedge_fast_reset_flag_array() {
     return _local_he_visited.local();
   }

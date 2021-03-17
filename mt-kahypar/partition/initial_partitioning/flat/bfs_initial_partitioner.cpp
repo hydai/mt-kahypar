@@ -115,6 +115,7 @@ inline void BFSInitialPartitioner::pushIncidentHypernodesIntoQueue(const Partiti
                                                                    const PartitionID block) {
   ASSERT(hn != kInvalidHypernode && block != kInvalidPartition);
   for ( const HyperedgeID& he : hypergraph.incidentEdges(hn) ) {
+    // TODO(maas): fix
     if ( !hyperedges_in_queue[block * hypergraph.initialNumEdges() + he] ) {
       if ( hypergraph.edgeSize(he) <= context.partition.ignore_hyperedge_size_threshold ) {
         for ( const HypernodeID& pin : hypergraph.pins(he) ) {
