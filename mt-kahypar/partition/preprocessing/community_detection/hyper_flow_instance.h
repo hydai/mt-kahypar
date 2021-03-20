@@ -13,11 +13,12 @@ namespace mt_kahypar::community_detection {
     std::vector<HypernodeID> _core;
 
     HyperFlowInstance(Hypergraph& hg, const Context& context, HypernodeID v) :
-      //_flow_hg_builder(hg.initialNumNodes(), hg.initialNumEdges(), hg.initialNumPins()),
+      _flow_hg_builder(),
       _nodeIDMap(hg.initialNumNodes() + 2, whfc::invalidNode),
-      //_edgeIDMap(hg.initialNumEdges() + 2, std::numeric_limits<HyperedgeID>::max()),
+      _edgeIDMap(0),
       _visitedNode(hg.initialNumNodes()),
-      _visitedHyperedge(hg.initialNumEdges())
+      _visitedHyperedge(hg.initialNumEdges()),
+      _core(0)
       {
         constructFlowgraphFromSourceNode(hg, v, context);
       }
@@ -34,14 +35,12 @@ namespace mt_kahypar::community_detection {
     kahypar::ds::FastResetFlagArray<> _visitedHyperedge;
 
     void constructFlowgraphFromSourceNode(const Hypergraph& hg, const HypernodeID v,const Context& context){
-      size_t U = hg.initialNumNodes() / context.partition.k;
-      std::pair<size_t,size_t> sizes =  initializeFlowHGBuilder(hg, v, U);
-      BreathFirstSearch(hg, v, sizes.first, sizes.second, U);
+      size_t U = hg.initialNumNodes() / (context.partition.k * 50);
+      size_t coreSize = U / 10;
+      BreathFirstSearch(hg, v, coreSize, U);
     }
 
-    std::pair<size_t,size_t> initializeFlowHGBuilder(const Hypergraph& hg, const HypernodeID start, size_t U);
-
-    void BreathFirstSearch(const Hypergraph& hg, const HypernodeID start, size_t coreSize, size_t ringSize, size_t U);
+    void BreathFirstSearch(const Hypergraph& hg, const HypernodeID start, size_t coreSize, size_t U);
 
   };
 }
