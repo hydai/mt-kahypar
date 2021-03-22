@@ -29,7 +29,7 @@ namespace mt_kahypar::community_detection {
     // Do flow calculations from every Hypernode
     //tbb::enumerable_thread_specific <std::vector<HyperedgeID>> cut_edges_local;
     //for (HypernodeID id = 0; id < hypergraph.initialNumNodes(); id++) {
-    tbb::parallel_for(ID(0), hypergraph.initialNumNodes(), [&](const HypernodeID id) {
+    tbb::parallel_for(ID(0), hypergraph.initialNumNodes(), [&](const HypernodeID id) {    // REVIEW no control how often a vertex appears in a core. potentially quadratic running  time in allocations
       ASSERT(id < vertices.size());
       HypernodeID v = vertices[id];
       if (!hypernodeProcessed[v]) {
@@ -49,7 +49,7 @@ namespace mt_kahypar::community_detection {
         }
         for (HypernodeID hn : hfib._core) {
           if (!hypernodeProcessed[hn]) {
-            progress++;
+            progress++;   // REVIEW data race
           }
           hypernodeProcessed.set(hn);
         }
