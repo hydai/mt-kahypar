@@ -78,7 +78,7 @@ namespace mt_kahypar::ds {
     ASSERT(static_cast<size_t>(_num_nodes) <= node_sizes.size());
     ASSERT(static_cast<size_t>(_num_nodes) <= tmp_num_incident_edges.size());
     ASSERT(static_cast<size_t>(_num_nodes) <= node_weights.size());
-    ASSERT(static_cast<size_t>(2 * _num_edges) <= tmp_edges.size());
+    ASSERT(static_cast<size_t>(_num_edges) <= tmp_edges.size());
 
 
     // #################### STAGE 1 ####################
@@ -271,7 +271,7 @@ namespace mt_kahypar::ds {
             0UL, static_cast<size_t>(coarsened_num_nodes)), degree_mapping);
     const HyperedgeID coarsened_num_edges = degree_mapping.total_sum();
     hypergraph._num_nodes = coarsened_num_nodes;
-    hypergraph._num_edges = coarsened_num_edges / 2;
+    hypergraph._num_edges = coarsened_num_edges;
 
     tbb::parallel_invoke([&] {
       utils::Timer::instance().start_timer("setup_edges", "Setup Edges", true);
@@ -286,6 +286,7 @@ namespace mt_kahypar::ds {
           const TmpEdgeInformation& tmp_edge = tmp_edges[tmp_edges_start + index];
           Edge& edge = hypergraph.edge(edges_start + index);          
           edge.setTarget(tmp_edge.getTarget());
+          edge.setSource(coarse_node);
           edge.setWeight(tmp_edge.getWeight());
         });
       });
@@ -304,21 +305,6 @@ namespace mt_kahypar::ds {
       doParallelForAllNodes([&](HypernodeID fine_node) {
         hypergraph.setCommunityID(map_to_coarse_graph(fine_node), communityID(fine_node));
       });
-    });
-
-    tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HyperedgeID& coarse_node) {
-      for (HyperedgeID id : hypergraph.incidentEdges(coarse_node)) {
-        const HypernodeID target = hypergraph.edge(id).target();
-        auto rev_start = hypergraph._edges.cbegin() + hypergraph.node(target).firstEntry();
-        auto rev_end = hypergraph._edges.cbegin() + hypergraph.node(target + 1).firstEntry();
-        auto rev_edge = std::lower_bound(rev_start, rev_end, Edge(coarse_node),
-                                         [](const Edge& e1, const Edge& e2) {
-                                           return e1.target() < e2.target();
-                                         });
-        ASSERT(rev_edge != rev_end);
-        ASSERT(rev_edge->target() == coarse_node);
-        rev_edge->setBackwardsEdge(id);
-      }
     });
 
     utils::Timer::instance().stop_timer("contract_hypergraph");
