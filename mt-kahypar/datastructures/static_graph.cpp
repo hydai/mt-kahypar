@@ -204,7 +204,7 @@ namespace mt_kahypar::ds {
         // valid_edge_index ---        tmp_edge_index ---
         size_t valid_edge_index = incident_edges_start;
         size_t tmp_edge_index = incident_edges_start + 1;
-        while (tmp_edges[tmp_edge_index].isValid() && tmp_edge_index < incident_edges_end) {
+        while (tmp_edge_index < incident_edges_end && tmp_edges[tmp_edge_index].isValid()) {
           HEAVY_COARSENING_ASSERT(
             [&](){
               size_t i = incident_edges_start;
