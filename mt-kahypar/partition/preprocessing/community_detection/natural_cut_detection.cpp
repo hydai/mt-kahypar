@@ -25,7 +25,7 @@ namespace mt_kahypar::community_detection {
         vertices, 0UL, vertices.size());
     }
 
-    size_t progress = 0;
+    tbb::atomic<size_t> progress = 0;
     // Do flow calculations from every Hypernode
     //tbb::enumerable_thread_specific <std::vector<HyperedgeID>> cut_edges_local;
     //for (HypernodeID id = 0; id < hypergraph.initialNumNodes(); id++) {
@@ -35,7 +35,7 @@ namespace mt_kahypar::community_detection {
       if (!hypernodeProcessed[v]) {
         std::cout << "Starting Flow Iteration" << std::endl;
         auto t = tbb::tick_count::now();
-        HyperFlowInstance hfib(hypergraph, context, v);
+        HyperFlowInstance hfib(hypergraph, context, v, hypernodeProcessed);
         auto t2 = tbb::tick_count::now();
         std::cout << "Starting Flow Computation" << std::endl;
         std::vector<HyperedgeID> cut = hfib.computeCut();
@@ -47,26 +47,35 @@ namespace mt_kahypar::community_detection {
         for (HyperedgeID he : cut) {
           visitedHyperedge.set(he);
         }
+        size_t temp = 0;
         for (HypernodeID hn : hfib._core) {
           if (!hypernodeProcessed[hn]) {
-            progress++;   // REVIEW data race
+            //TODO make atomic
+            temp++;
           }
+          //TODO do this in processing
           hypernodeProcessed.set(hn);
         }
+        progress += temp;
+        auto t4 = tbb::tick_count::now();
+        std::cout << "Time marking cut and core " << (t4-t3).seconds() << std::endl;
         std::cout << "Progress: " << progress << "/" << hypergraph.initialNumNodes() << std::endl;
       }
     //}
     });
-
+    auto t5 = tbb::tick_count::now();
     // Compute Connected Components
     hypernodeProcessed.reset();
     int current_community = 0;
+    int one = 0;
     for (HypernodeID v = 0; v < hypergraph.initialNumNodes(); v++) {
+      int size = 0;
       if (!hypernodeProcessed[v]) {
         Queue queue(hypergraph.initialNumNodes());
         queue.push(v);
         hypernodeProcessed.set(v);
         communities[v] = current_community;
+        size++;
         while (!queue.empty()) {
           HypernodeID u = queue.pop();
           for (const HyperedgeID e : hypergraph.incidentEdges(u)) {
@@ -77,15 +86,22 @@ namespace mt_kahypar::community_detection {
                   queue.push(u);
                   hypernodeProcessed.set(u);
                   communities[u] = current_community;
+                  size++;
                 }
               }
             }
           }
         }
         current_community++;
+        if (size == 1) {
+          one++;
+        }
       }
     }
-
+    std::cout << "Communities found: " << current_community << std::endl;
+    std::cout << "Communities Size 1: " << one << std::endl;
+    auto t6 = tbb::tick_count::now();
+    std::cout << "Time cc Computation " << (t6-t5).seconds() << std::endl;
     return communities;
   }
 }
