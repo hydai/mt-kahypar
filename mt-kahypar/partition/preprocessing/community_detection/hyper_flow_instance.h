@@ -37,7 +37,7 @@ namespace mt_kahypar::community_detection {
     bool shouldBeComputed;
 
     void constructFlowgraphFromSourceNode(const Hypergraph& hg, const HypernodeID v,const Context& context, kahypar::ds::FastResetFlagArray<>& hypernodeProcessed){
-      size_t U = hg.initialNumNodes() / (context.partition.k*10);
+      size_t U = hg.initialNumNodes() / (context.partition.k);
       size_t coreSize = U / 10;
       BreathFirstSearch(hg, v, coreSize, U, hypernodeProcessed);
     }

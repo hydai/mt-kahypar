@@ -50,6 +50,7 @@ namespace mt_kahypar::community_detection {
     size_t numVisited = 0;
     size_t newNodes = 0;
     size_t numPushed = 1;
+    bool sourceConnectedToTarget = false;
     std::vector<std::pair<HyperedgeID, HypernodeID>> largeEdgePins;
     //TODO remove
     while (!queue.empty() && numVisited < U) {
@@ -89,6 +90,7 @@ namespace mt_kahypar::community_detection {
                 numPushed++;
               } else {
                 _flow_hg_builder.addPin(_nodeIDMap[_globalTargetID]);
+                sourceConnectedToTarget = true;
                 break;
               }
             }
@@ -99,6 +101,12 @@ namespace mt_kahypar::community_detection {
       }
       numVisited++;
     }
+
+    if (!sourceConnectedToTarget) {
+      shouldBeComputed = false;
+      return;
+    }
+
     _globalSourceID = hg.initialNumNodes() + 1;
     _nodeIDMap[_globalSourceID] = whfc::Node::fromOtherValueType(queue.queueEnd()+1);
     _flow_hg_builder.addNode(0);

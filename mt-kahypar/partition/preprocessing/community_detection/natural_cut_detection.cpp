@@ -25,6 +25,19 @@ namespace mt_kahypar::community_detection {
         vertices, 0UL, vertices.size());
     }
 
+    tbb::parallel_for(ID(0), hypergraph.initialNumNodes(), [&](const HypernodeID id) {
+      bool foundEdge = false;
+      for (HyperedgeID e : hypergraph.incidentEdges(id)) {
+        if (hypergraph.edgeSize(e) < 1000) {
+          foundEdge = true;
+          break;
+        }
+      }
+      if (!foundEdge) {
+        hypernodeProcessed.set(id);
+      }
+    });
+
     tbb::atomic<size_t> progress = 0;
     // Do flow calculations from every Hypernode
     //tbb::enumerable_thread_specific <std::vector<HyperedgeID>> cut_edges_local;
