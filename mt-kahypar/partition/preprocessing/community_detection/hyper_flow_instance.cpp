@@ -51,8 +51,6 @@ namespace mt_kahypar::community_detection {
     size_t newNodes = 0;
     size_t numPushed = 1;
     bool sourceConnectedToTarget = false;
-    std::vector<std::pair<HyperedgeID, HypernodeID>> largeEdgePins;
-    //TODO remove
     while (!queue.empty() && numVisited < U) {
       HypernodeID v = queue.pop();
       if (numVisited < coreSize) {
@@ -70,17 +68,14 @@ namespace mt_kahypar::community_detection {
         }
       }
       for (const HyperedgeID e : hg.incidentEdges(v)) {
-        if (hg.edgeSize(e) > 1000) {
-          _visitedHyperedge.set(e);
-          largeEdgePins.push_back(std::make_pair(e,v));
-        }
         if (!_visitedHyperedge[e]) {
           _visitedHyperedge.set(e);
           _flow_hg_builder.startHyperedge(hg.edgeWeight(e));
-          //_edgeIDMap[_flow_hg_builder.numHyperedges()] = e;
-          //_edgeIDMap[numEdges++] = e;
           _edgeIDMap.push_back(e);
-          for (const HypernodeID u : hg.pins(e)) {
+          std::vector<HypernodeID> sampledNodes;
+          auto pins = hg.pins(e);
+          std::sample(pins.begin(), pins.end(), std::back_inserter(sampledNodes), 1000, std::mt19937{std::random_device{}()});
+          for (const HypernodeID u : sampledNodes) {
             if (!_visitedNode[u]) {
               if (numPushed < U) {
                 queue.push(u);
@@ -94,9 +89,9 @@ namespace mt_kahypar::community_detection {
                 break;
               }
             }
-
             _flow_hg_builder.addPin(_nodeIDMap[u]);
           }
+
         }
       }
       numVisited++;
@@ -114,17 +109,6 @@ namespace mt_kahypar::community_detection {
     _flow_hg_builder.addPin(_nodeIDMap[_globalSourceID]);
     for (HypernodeID v : _core) {
       _flow_hg_builder.addPin(_nodeIDMap[v]);
-    }
-    if (largeEdgePins.size() > 0) {
-      std::sort(largeEdgePins.begin(), largeEdgePins.end());
-      _flow_hg_builder.startHyperedge(hg.edgeWeight(largeEdgePins[0].first));
-      for (int i = 0; i < largeEdgePins.size() - 1; i++) {
-        _flow_hg_builder.addPin(_nodeIDMap[largeEdgePins[i].second]);
-        if (largeEdgePins[i].first != largeEdgePins[i + 1].first) {
-          _flow_hg_builder.startHyperedge(hg.edgeWeight(largeEdgePins[i + 1].first));
-        }
-      }
-      _flow_hg_builder.addPin(_nodeIDMap[largeEdgePins.back().second]);
     }
     _flow_hg_builder.finalize();
   }
