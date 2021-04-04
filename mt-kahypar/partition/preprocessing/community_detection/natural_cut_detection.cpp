@@ -25,8 +25,6 @@ namespace mt_kahypar::community_detection {
         vertices, 0UL, vertices.size());
     }
 
-    tbb::atomic<size_t> progress = 0;
-
     tbb::parallel_for(ID(0), hypergraph.initialNumNodes(), [&](const HypernodeID id) {
       bool foundEdge = false;
       for (HyperedgeID e : hypergraph.incidentEdges(id)) {
@@ -37,10 +35,10 @@ namespace mt_kahypar::community_detection {
       }
       if (!foundEdge) {
         hypernodeProcessed.set(id);
-        progress++;
       }
     });
 
+    tbb::atomic<size_t> progress = 0;
     // Do flow calculations from every Hypernode
     //tbb::enumerable_thread_specific <std::vector<HyperedgeID>> cut_edges_local;
     //for (HypernodeID id = 0; id < hypergraph.initialNumNodes(); id++) {
@@ -56,8 +54,8 @@ namespace mt_kahypar::community_detection {
         std::vector<HyperedgeID> cut = hfib.computeCut();
         auto t3 = tbb::tick_count::now();
         std::cout << "Found cut with " << cut.size() << " edges" << std::endl;
-        std::cout << "Time building Flowgraph " << (t2 - t).seconds() << std::endl;
-        std::cout << "Time calculating Cut " << (t3 - t2).seconds() << std::endl;
+        std::cout << "Time building Flowgraph " << (t2-t).seconds() << std::endl;
+        std::cout << "Time calculating Cut " << (t3-t2).seconds() << std::endl;
         //cut_edges_local.local().insert(cut_edges_local.local().end(), cut.begin(), cut.end());
         for (HyperedgeID he : cut) {
           visitedHyperedge.set(he);
@@ -65,6 +63,7 @@ namespace mt_kahypar::community_detection {
         size_t temp = 0;
         for (HypernodeID hn : hfib._core) {
           if (!hypernodeProcessed[hn]) {
+            //TODO make atomic
             temp++;
           }
           //TODO do this in processing
@@ -72,7 +71,7 @@ namespace mt_kahypar::community_detection {
         }
         progress += temp;
         auto t4 = tbb::tick_count::now();
-        std::cout << "Time marking cut and core " << (t4 - t3).seconds() << std::endl;
+        std::cout << "Time marking cut and core " << (t4-t3).seconds() << std::endl;
         std::cout << "Progress: " << progress << "/" << hypergraph.initialNumNodes() << std::endl;
       }
     //}
