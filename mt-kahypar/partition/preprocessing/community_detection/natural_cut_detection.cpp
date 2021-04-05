@@ -4,16 +4,91 @@
 #include "external_tools/kahypar/kahypar/datastructure/fast_reset_flag_array.h"
 #include "external_tools/kahypar/external_tools/WHFC/datastructure/queue.h"
 #include "mt-kahypar/utils/timer.h"
+#include "stack"
 
 namespace mt_kahypar::community_detection {
 
   using Queue = LayeredQueue<HypernodeID>;
   static constexpr HypernodeID invalid_node = std::numeric_limits<HypernodeID>::max();
 
-  void depthFirstSearch(HypernodeID v, HypernodeID d, Hypergraph& hypergraph,
+  void depthFirstSearch(HypernodeID start, HypernodeID d, Hypergraph& hypergraph,
                         kahypar::ds::FastResetFlagArray<>& visitedHypernode, kahypar::ds::FastResetFlagArray<>& processedHypernode,
                         std::vector<HypernodeID>& depth, std::vector<HypernodeID>& lowPoint, std::vector<HypernodeID>& parent) {
-    visitedHypernode.set(v);
+    std::stack<HypernodeID> s;
+    std::stack<HypernodeID> s2;
+    s.push(start);
+    s2.push(start);
+
+    kahypar::ds::FastResetFlagArray<> pushedChildren(hypergraph.initialNumNodes());
+    while (!s.empty()) {
+      HypernodeID v = s.top();
+      if (!pushedChildren[v]) {
+        pushedChildren.set(v);
+        if (v != start) {
+          depth[v] = depth[parent[v]] + 1;
+        } else {
+          depth[v] = 0;
+        }
+        lowPoint[v] = depth[v];
+        for (const HyperedgeID e : hypergraph.incidentEdges(v)) {
+          for (const HypernodeID u : hypergraph.pins(e)) {
+            if (!visitedHypernode[u]) {
+              visitedHypernode.set(u);
+              parent[u] = v;
+              s.push(u);
+              s2.push(u);
+            }
+          }
+        }
+      } else {
+        s.pop();
+        int children = 0;
+        bool isArticulationPoint = false;
+        for (const HyperedgeID e : hypergraph.incidentEdges(v)) {
+          for (const HypernodeID u : hypergraph.pins(e)) {
+            if (parent[u] = v) {
+              children++;
+              if (lowPoint[u] >= depth[v]) {
+                isArticulationPoint = true;
+              }
+              lowPoint[v] = std::min(lowPoint[v], lowPoint[u]);
+            } else if (parent[v] != u) {
+              lowPoint[v] = std::min(lowPoint[v], lowPoint[u]);
+            }
+          }
+        }
+        if (!(((parent[v] != invalid_node) && isArticulationPoint) || ((parent[v] = invalid_node) && (children > 1)))) {
+          processedHypernode.set(v);
+        }
+      }
+    }
+    /*kahypar::ds::FastResetFlagArray<> checkedHypernode(hypergraph.initialNumNodes());
+    while (!s2.empty()) {
+      HypernodeID v = s2.top();
+      s2.pop();
+      if (!checkedHypernode[v]) {
+        checkedHypernode.set(v);
+        int children = 0;
+        bool isArticulationPoint = false;
+        for (const HyperedgeID e : hypergraph.incidentEdges(v)) {
+          for (const HypernodeID u : hypergraph.pins(e)) {
+            if (parent[u] = v) {
+              children++;
+              if (lowPoint[u] >= depth[v]) {
+                isArticulationPoint = true;
+              }
+              lowPoint[v] = std::min(lowPoint[v], lowPoint[u]);
+            } else if (parent[v] != u) {
+              lowPoint[v] = std::min(lowPoint[v], lowPoint[u]);
+            }
+          }
+        }
+        if (!(((parent[v] != invalid_node) && isArticulationPoint) || ((parent[v] = invalid_node) && (children > 1)))) {
+          processedHypernode.set(v);
+        }
+      }
+    }*/
+    /*visitedHypernode.set(v);
     depth[v] = d;
     lowPoint[v] = d;
     int children = 0;
@@ -36,7 +111,7 @@ namespace mt_kahypar::community_detection {
     }
     if (!(((parent[v] != invalid_node) && isArticulationPoint) || ((parent[v] = invalid_node) && (children > 1)))) {
       processedHypernode.set(v);
-    }
+    }*/
   }
 
   ds::Clustering run_natural_cut_detection(Hypergraph& hypergraph, const Context& context, bool disable_randomization) {
@@ -79,6 +154,7 @@ namespace mt_kahypar::community_detection {
     }
 
     tbb::atomic<size_t> progress = 0;
+    tbb::atomic<size_t> num = 0;
     // Do flow calculations from every Hypernode
     //tbb::enumerable_thread_specific <std::vector<HyperedgeID>> cut_edges_local;
     //for (HypernodeID id = 0; id < hypergraph.initialNumNodes(); id++) {
@@ -113,9 +189,12 @@ namespace mt_kahypar::community_detection {
         auto t4 = tbb::tick_count::now();
         std::cout << "Time marking cut and core " << (t4-t3).seconds() << std::endl;
         std::cout << "Progress: " << progress << "/" << hypergraph.initialNumNodes() << std::endl;
+        num++;
       }
     //}
     });
+
+    std::cout << "Num Flow calcs: " << num << std::endl;
     auto t5 = tbb::tick_count::now();
     // Compute Connected Components
     hypernodeProcessed.reset();
