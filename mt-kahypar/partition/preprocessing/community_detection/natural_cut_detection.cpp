@@ -8,6 +8,36 @@
 namespace mt_kahypar::community_detection {
 
   using Queue = LayeredQueue<HypernodeID>;
+  static constexpr HypernodeID invalid_node = std::numeric_limits<HypernodeID>::max();
+
+  void depthFirstSearch(HypernodeID v, HypernodeID d, Hypergraph& hypergraph,
+                        kahypar::ds::FastResetFlagArray<>& visitedHypernode, kahypar::ds::FastResetFlagArray<>& processedHypernode,
+                        std::vector<HypernodeID>& depth, std::vector<HypernodeID>& lowPoint, std::vector<HypernodeID>& parent) {
+    visitedHypernode.set(v);
+    depth[v] = d;
+    lowPoint[v] = d;
+    int children = 0;
+    bool isArticulationPoint = false;
+
+    for (const HyperedgeID e : hypergraph.incidentEdges(v)) {
+      for (const HypernodeID u : hypergraph.pins(e)) {
+        if (!visitedHypernode[u]) {
+          parent[u] = v;
+          depthFirstSearch(u, d+1, hypergraph,visitedHypernode, processedHypernode, depth, lowPoint, parent);
+          children++;
+          if (lowPoint[u] >= depth[v]) {
+            isArticulationPoint = true;
+          }
+          lowPoint[v] = std::min(lowPoint[v], lowPoint[u]);
+        } else if (parent[v] != u) {
+          lowPoint[v] = std::min(lowPoint[v], lowPoint[u]);
+        }
+      }
+    }
+    if (!(((parent[v] != invalid_node) && isArticulationPoint) || ((parent[v] = invalid_node) && (children > 1)))) {
+      processedHypernode.set(v);
+    }
+  }
 
   ds::Clustering run_natural_cut_detection(Hypergraph& hypergraph, const Context& context, bool disable_randomization) {
     kahypar::ds::FastResetFlagArray<> hypernodeProcessed(hypergraph.initialNumNodes());
@@ -37,6 +67,16 @@ namespace mt_kahypar::community_detection {
         hypernodeProcessed.set(id);
       }
     });
+
+    kahypar::ds::FastResetFlagArray<> visitedHypernode(hypergraph.initialNumNodes());
+    std::vector<HypernodeID> depth(hypergraph.initialNumNodes(), invalid_node);
+    std::vector<HypernodeID> lowPoint(hypergraph.initialNumNodes(), invalid_node);
+    std::vector<HypernodeID> parent(hypergraph.initialNumNodes(), invalid_node);
+    for (HypernodeID id = 0; id < hypergraph.initialNumNodes(); id++) {
+      if (!visitedHypernode[id]) {
+        depthFirstSearch(id, 0, hypergraph, visitedHypernode, hypernodeProcessed, depth, lowPoint, parent);
+      }
+    }
 
     tbb::atomic<size_t> progress = 0;
     // Do flow calculations from every Hypernode
@@ -117,4 +157,6 @@ namespace mt_kahypar::community_detection {
     std::cout << "Time cc Computation " << (t6-t5).seconds() << std::endl;
     return communities;
   }
+
+
 }
