@@ -40,6 +40,7 @@ namespace mt_kahypar::community_detection {
       size_t U = hg.initialNumNodes() / (context.partition.k);
       size_t coreSize = U / 10;
       BreathFirstSearch(hg, v, coreSize, U, hypernodeProcessed);
+      _flow_hg_builder.printHypergraph(std::cout);
     }
 
     void BreathFirstSearch(const Hypergraph& hg, const HypernodeID start, size_t coreSize, size_t U, kahypar::ds::FastResetFlagArray<>& hypernodeProcessed);
