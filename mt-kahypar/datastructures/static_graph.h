@@ -53,7 +53,7 @@ class StaticGraph {
   // degree vertices. Therefore, all vertices with temporary degree greater
   // than this threshold are contracted with a special procedure.
   // TODO: what is a good value?
-  static constexpr HyperedgeID HIGH_DEGREE_CONTRACTION_THRESHOLD = ID(500000);
+  static constexpr HyperedgeID HIGH_DEGREE_CONTRACTION_THRESHOLD = ID(100000);
 
   static_assert(std::is_unsigned<HypernodeID>::value, "Node ID must be unsigned");
   static_assert(std::is_unsigned<HyperedgeID>::value, "Hyperedge ID must be unsigned");
@@ -188,7 +188,7 @@ class StaticGraph {
     // ! Index of target node
     HypernodeID _target;
     // ! Index of source node
-    // TODO: can we avoid storing the source vertex within each edge?
+    // TODO(maas): can we avoid storing the source vertex within each edge?
     HypernodeID _source;
     // ! hyperedge weight
     HyperedgeWeight _weight;
@@ -294,6 +294,7 @@ class StaticGraph {
 
     // ! Returns the id of the element the iterator currently points to.
     HypernodeID operator* () const {
+      ASSERT(_iteration_count < 2);
       return _iteration_count == 0 ? _source : _target;
     }
 
@@ -312,11 +313,13 @@ class StaticGraph {
     }
 
     bool operator!= (const PinIterator& rhs) {
-      return _iteration_count != rhs._iteration_count;
+      return _iteration_count != rhs._iteration_count ||
+             _source != rhs._source || _target != rhs._target;
     }
 
     bool operator== (const PinIterator& rhs) {
-      return _iteration_count == rhs._iteration_count;
+      return _iteration_count == rhs._iteration_count &&
+              _source == rhs._source && _target == rhs._target;
     }
 
    private:
@@ -376,7 +379,6 @@ class StaticGraph {
   // ! Contains buffers that are needed during multilevel contractions.
   // ! Struct is allocated on top level hypergraph and passed to each contracted
   // ! hypergraph such that memory can be reused in consecutive contractions.
-  // TODO
   struct TmpContractionBuffer {
     explicit TmpContractionBuffer(const HypernodeID num_nodes,
                                   const HyperedgeID num_edges) {
@@ -581,7 +583,7 @@ class StaticGraph {
   }
 
   // ! Removes a degree zero hypernode
-  // TODO: can this be done implicitely?
+  // TODO(maas): can this be done implicitely?
   void removeDegreeZeroHypernode(const HypernodeID u) {
     ASSERT(nodeDegree(u) == 0);
     node(u).disable();
@@ -595,6 +597,16 @@ class StaticGraph {
   }
 
   // ####################### Hyperedge Information #######################
+
+  // ! Target of an edge
+  HypernodeID edgeTarget(const HyperedgeID e) const {
+    return edge(e).target();
+  }
+
+  // ! Target of an edge
+  HypernodeID edgeSource(const HyperedgeID e) const {
+    return edge(e).source();
+  }
 
   // ! Weight of a hyperedge
   HypernodeWeight edgeWeight(const HyperedgeID e) const {
@@ -815,8 +827,6 @@ class StaticGraph {
   // ! Total weight of the graph
   HypernodeWeight _total_weight;
 
-  // TODO: the current representation, where HyperedgeID is an index into the edge array, is problematic.
-  // Each edge has two different possible IDs which can not be detected to be equal by direct comparison.
   // ! Nodes
   Array<Node> _nodes;
   // ! Edges

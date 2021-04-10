@@ -29,10 +29,6 @@
 
 
 namespace mt_kahypar::ds {
-
-  // TODO split contraction into multiple functions!
-
-
   /*!
   * This struct is used during multilevel coarsening to efficiently
   * detect parallel hyperedges.
@@ -192,7 +188,8 @@ namespace mt_kahypar::ds {
       const size_t incident_edges_start = tmp_incident_edges_prefix_sum[coarse_node];
       const size_t incident_edges_end = tmp_incident_edges_prefix_sum[coarse_node + 1];
       const size_t tmp_degree = incident_edges_end - incident_edges_start;
-      if ( tmp_degree <= HIGH_DEGREE_CONTRACTION_THRESHOLD ) {
+      // TODO(maas): is coarsened_num_nodes a sensible threshold?
+      if ( tmp_degree <= std::max(coarsened_num_nodes, HIGH_DEGREE_CONTRACTION_THRESHOLD) ) {
         std::sort(tmp_edges.begin() + incident_edges_start, tmp_edges.begin() + incident_edges_end,
                   [](const TmpEdgeInformation& e1, const TmpEdgeInformation& e2) {
                     return e1._target < e2._target;
@@ -250,7 +247,50 @@ namespace mt_kahypar::ds {
       tmp_nodes[coarse_node].setFirstEntry(incident_edges_start);
     });
 
-    // TODO: high degree vertices
+    if ( !high_degree_vertices.empty() ) {
+      // High degree vertices are treated special, because sorting and afterwards
+      // removing duplicates can become a major sequential bottleneck. Therefore,
+      // we sum the parallel incident edges of a high degree vertex using an atomic
+      // vector. Then, the index is calculated with a prefix sum.
+      parallel::scalable_vector<parallel::IntegralAtomicWrapper<HyperedgeWeight>> summed_edge_weights_for_target;
+      summed_edge_weights_for_target.assign(coarsened_num_nodes, parallel::IntegralAtomicWrapper<HyperedgeWeight>(0));
+      parallel::scalable_vector<HyperedgeID> incident_edges_inclusion;
+      incident_edges_inclusion.assign(coarsened_num_nodes, 0);
+      for ( const HypernodeID& coarse_node : high_degree_vertices ) {
+        const size_t incident_edges_start = tmp_incident_edges_prefix_sum[coarse_node];
+        const size_t incident_edges_end = tmp_incident_edges_prefix_sum[coarse_node + 1];
+
+        // sum edge weights for each target node
+        tbb::parallel_for(incident_edges_start, incident_edges_end, [&](const size_t pos) {
+          TmpEdgeInformation& edge = tmp_edges[pos];
+          if (edge.isValid()) {
+            summed_edge_weights_for_target[edge.getTarget()].fetch_add(edge.getWeight());
+          }
+        });
+
+        // each edge with weight greater than zero is included
+        tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const size_t target) {
+          bool include = summed_edge_weights_for_target[target].load() > 0;
+          incident_edges_inclusion[target] = include ? 1 : 0;
+        });
+
+        // calculate relative index of edges via prefix sum
+        parallel::TBBPrefixSum<HyperedgeID, parallel::scalable_vector> incident_edges_pos(incident_edges_inclusion);
+        tbb::parallel_scan(tbb::blocked_range<size_t>(0UL, static_cast<size_t>(coarsened_num_nodes)), incident_edges_pos);
+
+        // insert edges
+        tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const size_t target) {
+          HyperedgeWeight weight = summed_edge_weights_for_target[target].load();
+          if (weight > 0) {
+            tmp_edges[incident_edges_start + incident_edges_pos[target]] = TmpEdgeInformation(target, weight);
+            summed_edge_weights_for_target[target].store(0);
+          }
+        });
+
+        const size_t contracted_size = incident_edges_pos.total_sum();
+        node_sizes[coarse_node] = contracted_size;
+      }
+    }
 
     utils::Timer::instance().stop_timer("remove_parallel_edges");
 
@@ -280,7 +320,7 @@ namespace mt_kahypar::ds {
       tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HyperedgeID& coarse_node) {
         const HyperedgeID tmp_edges_start = tmp_nodes[coarse_node].firstEntry();
         const HyperedgeID edges_start = degree_mapping[coarse_node];
-        // TODO: good idea? Better handle high degree nodes separately?
+        // TODO(maas): good idea? Better handle high degree nodes separately?
         tbb::parallel_for(ID(0), degree_mapping.value(coarse_node), [&](const HyperedgeID& index) {
           ASSERT(tmp_edges_start + index < tmp_edges.size() && edges_start + index < hypergraph._edges.size());
           const TmpEdgeInformation& tmp_edge = tmp_edges[tmp_edges_start + index];
