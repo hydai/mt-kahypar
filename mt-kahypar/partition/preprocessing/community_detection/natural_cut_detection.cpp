@@ -5,6 +5,7 @@
 #include "external_tools/kahypar/external_tools/WHFC/datastructure/queue.h"
 #include "mt-kahypar/utils/timer.h"
 #include "stack"
+#include "map"
 
 namespace mt_kahypar::community_detection {
 
@@ -78,13 +79,24 @@ namespace mt_kahypar::community_detection {
         depthFirstSearch(id, 0, originalHypergraph, visitedHypernode, depth, lowPoint, parent, components);
       }
     }
-    Hypergraph hypergraph = originalHypergraph.contract(components, TBBNumaArena::GLOBAL_TASK_GROUP);
+
+    std::map<HypernodeID,HypernodeID> m;
+    for (HypernodeID id = 0; id < originalHypergraph.initialNumNodes(); id++) {
+      if (m.find(components[id]) == m.end()) {
+        m.insert(std::make_pair(components[id],0));
+      }
+      m[components[id]]++;
+    }
 
     for (HypernodeID id = 0; id < originalHypergraph.initialNumNodes(); id++) {
-      if(components[id] >= hypergraph.initialNumNodes()){
-        std::cout << "RIP\n";
+      if (m[components[id]] >= (originalHypergraph.initialNumNodes()/(2*10))) {
+        components[id] = id;
       }
     }
+
+    Hypergraph hypergraph = originalHypergraph.contract(components, TBBNumaArena::GLOBAL_TASK_GROUP);
+
+
 
     kahypar::ds::FastResetFlagArray<> hypernodeProcessed(hypergraph.initialNumNodes());
     kahypar::ds::FastResetFlagArray<> visitedHyperedge(hypergraph.initialNumEdges());
@@ -197,7 +209,6 @@ namespace mt_kahypar::community_detection {
     ds::Clustering uncontractedCommunities(originalHypergraph.initialNumNodes());
     tbb::parallel_for(ID(0), originalHypergraph.initialNumNodes(), [&](const HypernodeID hn) {
       uncontractedCommunities[hn] = communities[components[hn]];
-
     });
 
     std::cout << "Communities found: " << current_community << std::endl;
