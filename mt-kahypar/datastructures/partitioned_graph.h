@@ -377,12 +377,8 @@ private:
   }
 
   void setNodePart(const HypernodeID u, PartitionID p) {
-    ASSERT(false, "TODO");
-    // setOnlyNodePart(u, p);
-    // _part_weights[p].fetch_add(nodeWeight(u), std::memory_order_relaxed);
-    // for (HyperedgeID he : incidentEdges(u)) {
-    //   incrementPinCountInPartWithoutGainUpdate(he, p);
-    // }
+    setOnlyNodePart(u, p);
+    _part_weights[p].fetch_add(nodeWeight(u), std::memory_order_relaxed);
   }
 
   // ! Changes the block id of vertex u from block 'from' to block 'to'
@@ -396,7 +392,12 @@ private:
                       DeltaFunc&& delta_func) {
     ASSERT(partID(u) == from);
     ASSERT(from != to);
-    ASSERT(false, "TODO"); return false;
+    _part_ids[u] = to;
+    _part_weights[from].fetch_sub(nodeWeight(u), std::memory_order_relaxed);
+    _part_weights[to].fetch_add(nodeWeight(u), std::memory_order_relaxed);
+    return true;
+    // TODO
+
     // const HypernodeWeight wu = nodeWeight(u);
     // const HypernodeWeight to_weight_after = _part_weights[to].add_fetch(wu, std::memory_order_relaxed);
     // const HypernodeWeight from_weight_after = _part_weights[from].fetch_sub(wu, std::memory_order_relaxed);
@@ -672,13 +673,12 @@ private:
 
   // ####################### Extract Block #######################
 
-  // TODO: not very efficient
+  // TODO
   // ! Extracts a block of a partition as separate hypergraph.
   // ! It also returns a vertex-mapping from the original hypergraph to the sub-hypergraph.
   // ! If cut_net_splitting is activated, hyperedges that span more than one block (cut nets) are split, which is used for the connectivity metric.
   // ! Otherwise cut nets are discarded (cut metric).
   std::pair<Hypergraph, parallel::scalable_vector<HypernodeID> > extract(const TaskGroupID& task_group_id, PartitionID block, bool cut_net_splitting) {
-    LOG << "extract";
     ASSERT(block != kInvalidPartition && block < _k);
 
     // Compactify vertex ids
@@ -745,17 +745,10 @@ private:
     return std::make_pair(std::move(extracted_hypergraph), std::move(hn_mapping));
   }
 
-  // TODO
   void freeInternalData() {
-    // if ( _k > 0 ) {
-    //   tbb::parallel_invoke( [&] {
-    //     parallel::parallel_free(_part_ids, _pin_count_update_ownership);
-    //   }, [&] {
-    //     parallel::free(_pins_in_part.data());
-    //   }, [&] {
-    //     _connectivity_set.freeInternalData();
-    //   } );
-    // }
+    if ( _k > 0 ) {
+      parallel::parallel_free(_part_ids, _incident_weight_in_part);
+    }
     _k = 0;
   }
 

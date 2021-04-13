@@ -36,8 +36,8 @@ using AStaticGraph = HypergraphFixture<StaticGraph, StaticGraphFactory, true>;
 TEST_F(AStaticGraph, HasCorrectStats) {
   ASSERT_EQ(7,  hypergraph.initialNumNodes());
   ASSERT_EQ(12,  hypergraph.initialNumEdges());
-  ASSERT_EQ(24, hypergraph.initialNumPins());
-  ASSERT_EQ(24, hypergraph.initialTotalVertexDegree());
+  ASSERT_EQ(12, hypergraph.initialNumPins());
+  ASSERT_EQ(12, hypergraph.initialTotalVertexDegree());
   ASSERT_EQ(7,  hypergraph.totalWeight());
   ASSERT_EQ(2,  hypergraph.maxEdgeSize());
 }

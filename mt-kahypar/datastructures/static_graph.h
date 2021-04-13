@@ -495,12 +495,12 @@ class StaticGraph {
 
   // ! Initial number of pins
   HypernodeID initialNumPins() const {
-    return 2 * _num_edges;
+    return _num_edges;
   }
 
   // ! Initial sum of the degree of all vertices
   HypernodeID initialTotalVertexDegree() const {
-    return 2 * _num_edges;
+    return _num_edges;
   }
 
   // ! Total weight of hypergraph
@@ -822,7 +822,7 @@ class StaticGraph {
   HypernodeID _num_nodes;
   // ! Number of removed nodes
   HypernodeID _num_removed_nodes;
-  // ! Number of edges
+  // ! Number of edges (note that each hyperedge is respresented as two graph edges)
   HyperedgeID _num_edges;
   // ! Total weight of the graph
   HypernodeWeight _total_weight;
