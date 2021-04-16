@@ -89,7 +89,7 @@ namespace mt_kahypar::ds {
 
     // Prefix sum determines vertex ids in coarse graph
     parallel::TBBPrefixSum<HyperedgeID, Array> mapping_prefix_sum(mapping);
-    tbb::parallel_scan(tbb::blocked_range<size_t>(0UL, _num_nodes), mapping_prefix_sum);
+    tbb::parallel_scan(tbb::blocked_range<size_t>(ID(0), _num_nodes), mapping_prefix_sum);
     HypernodeID coarsened_num_nodes = mapping_prefix_sum.total_sum();
 
     // Remap community ids
@@ -144,7 +144,7 @@ namespace mt_kahypar::ds {
             tmp_incident_edges_prefix_sum(tmp_num_incident_edges);
     tbb::parallel_invoke([&] {
       tbb::parallel_scan(tbb::blocked_range<size_t>(
-              0UL, static_cast<size_t>(coarsened_num_nodes)), tmp_incident_edges_prefix_sum);
+              ID(0), static_cast<size_t>(coarsened_num_nodes)), tmp_incident_edges_prefix_sum);
     }, [&] {
       tmp_incident_edges_pos.assign(coarsened_num_nodes, parallel::IntegralAtomicWrapper<HyperedgeID>(0));
     });
@@ -276,7 +276,7 @@ namespace mt_kahypar::ds {
 
         // calculate relative index of edges via prefix sum
         parallel::TBBPrefixSum<HyperedgeID, parallel::scalable_vector> incident_edges_pos(incident_edges_inclusion);
-        tbb::parallel_scan(tbb::blocked_range<size_t>(0UL, static_cast<size_t>(coarsened_num_nodes)), incident_edges_pos);
+        tbb::parallel_scan(tbb::blocked_range<size_t>(ID(0), static_cast<size_t>(coarsened_num_nodes)), incident_edges_pos);
 
         // insert edges
         tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const size_t target) {
@@ -308,7 +308,7 @@ namespace mt_kahypar::ds {
     // Compute number of edges in coarse graph (those flagged as valid)
     parallel::TBBPrefixSum<HyperedgeID, Array> degree_mapping(node_sizes);
     tbb::parallel_scan(tbb::blocked_range<size_t>(
-            0UL, static_cast<size_t>(coarsened_num_nodes)), degree_mapping);
+            ID(0), static_cast<size_t>(coarsened_num_nodes)), degree_mapping);
     const HyperedgeID coarsened_num_edges = degree_mapping.total_sum();
     hypergraph._num_nodes = coarsened_num_nodes;
     hypergraph._num_edges = coarsened_num_edges;

@@ -497,7 +497,7 @@ private:
     if (to_weight_after <= max_weight_to && from_weight_after > 0) {
       DBG << "<<< Start changing node part: " << V(u) << " - " << V(from) << " - " << V(to);
       report_success();
-      vec<std::pair<HyperedgeID, PartitionID>> locks_to_restore;
+      parallel::scalable_vector<std::pair<HyperedgeID, PartitionID>> locks_to_restore;
       for (const HyperedgeID edge : incidentEdges(u)) {
         const PartitionID target_part = targetPartWithLockSynchronization(u, to, edge, locks_to_restore);
         const HypernodeID pin_count_in_from_part_after = target_part == from ? 1 : 0;
@@ -617,7 +617,7 @@ private:
            _incident_weight_in_part[incident_weight_index(u, p)].load(std::memory_order_relaxed);
   }
 
-  void initializeGainCacheEntry(const HypernodeID u, vec<Gain>& penalty_aggregator) {
+  void initializeGainCacheEntry(const HypernodeID u, parallel::scalable_vector<Gain>& penalty_aggregator) {
     for (HyperedgeID e : incidentEdges(u)) {
       penalty_aggregator[partID(edgeTarget(e))] += edgeWeight(e);
     }
@@ -874,7 +874,7 @@ private:
   PartitionID targetPartWithLockSynchronization(const HypernodeID u,
                                                 const PartitionID to,
                                                 const HyperedgeID edge,
-                                                vec<std::pair<HyperedgeID, PartitionID>>& locks_to_restore) {
+                                                parallel::scalable_vector<std::pair<HyperedgeID, PartitionID>>& locks_to_restore) {
     const HypernodeID v = edgeTarget(edge);
     const bool is_smaller_id = u < v;
     EdgeLock& lock = _edge_locks[_edge_lock_id[edge]];
@@ -899,12 +899,14 @@ private:
         locks_to_restore.push_back({edge, part_id});
         DBG << "Lock needs to be restored: " << V(u) << " - " << V(v);
       }
+    } else {
+      ALWAYS_ASSERT(false, "unreachable");
     }
     lock.unlockMoving(is_smaller_id, to);
     return target_part;
   }
 
-  void restoreLockInformation(const HypernodeID u, vec<std::pair<HyperedgeID, PartitionID>>&& locks_to_restore) {
+  void restoreLockInformation(const HypernodeID u, parallel::scalable_vector<std::pair<HyperedgeID, PartitionID>>&& locks_to_restore) {
       for (const auto& [edge, part_id] : locks_to_restore) {
         const HypernodeID v = edgeTarget(edge);
         const bool is_smaller_id = u < v;
@@ -930,7 +932,7 @@ private:
     tbb::parallel_for(tbb::blocked_range<HypernodeID>(HypernodeID(0), initialNumNodes()),
       [&](tbb::blocked_range<HypernodeID>& r) {
         // this is not enumerable_thread_specific because of the static partitioner
-        vec<HypernodeWeight> part_weight_deltas(_k, 0);
+        parallel::scalable_vector<HypernodeWeight> part_weight_deltas(_k, 0);
         for (HypernodeID node = r.begin(); node < r.end(); ++node) {
           if (nodeIsEnabled(node)) {
             part_weight_deltas[partID(node)] += nodeWeight(node);
@@ -974,7 +976,7 @@ private:
 
     HEAVY_REFINEMENT_ASSERT(
       [&](){
-        vec<bool> covered_ids(_hg->initialNumEdges() / 2, false);
+        parallel::scalable_vector<bool> covered_ids(_hg->initialNumEdges() / 2, false);
         for (HyperedgeID e : edges()) {
           HyperedgeID id = _edge_lock_id[e];
           covered_ids.at(id) = true;
@@ -1024,7 +1026,7 @@ private:
   Hypergraph* _hg = nullptr;
 
   // ! Weight and information for all blocks.
-  vec< CAtomic<HypernodeWeight> > _part_weights;
+  parallel::scalable_vector< CAtomic<HypernodeWeight> > _part_weights;
 
   // ! Current block IDs of the vertices
   Array< CAtomic<PartitionID> > _part_ids;
