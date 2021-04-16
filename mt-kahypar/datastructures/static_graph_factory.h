@@ -30,7 +30,7 @@ namespace mt_kahypar {
 namespace ds {
 
 class StaticGraphFactory {
-
+  using EdgeVector = parallel::scalable_vector<std::pair<HypernodeID, HypernodeID>>;
   using HyperedgeVector = parallel::scalable_vector<parallel::scalable_vector<HypernodeID>>;
   using Counter = parallel::scalable_vector<size_t>;
   using AtomicCounter = parallel::scalable_vector<parallel::IntegralAtomicWrapper<size_t>>;
@@ -38,12 +38,22 @@ class StaticGraphFactory {
 
  public:
   static StaticGraph construct(const TaskGroupID task_group_id,
-                                const HypernodeID num_hypernodes,
-                                const HyperedgeID num_hyperedges,
-                                const HyperedgeVector& edge_vector,
-                                const HyperedgeWeight* hyperedge_weight = nullptr,
-                                const HypernodeWeight* hypernode_weight = nullptr,
-                                const bool stable_construction_of_incident_edges = false);
+                               const HypernodeID num_nodes,
+                               const HyperedgeID num_edges,
+                               const HyperedgeVector& edge_vector,
+                               const HyperedgeWeight* edge_weight = nullptr,
+                               const HypernodeWeight* node_weight = nullptr,
+                               const bool stable_construction_of_incident_edges = false);
+
+  // ! Provides a more performant construction method by using continuous space for the edges
+  // ! (instead of a separate vec per edge).
+  static StaticGraph construct_from_graph_edges(const TaskGroupID task_group_id,
+                               const HypernodeID num_nodes,
+                               const HyperedgeID num_edges,
+                               const EdgeVector& edge_vector,
+                               const HyperedgeWeight* edge_weight = nullptr,
+                               const HypernodeWeight* node_weight = nullptr,
+                               const bool stable_construction_of_incident_edges = false);
 
   static std::pair<StaticGraph,
           parallel::scalable_vector<HypernodeID> > compactify(const TaskGroupID ,

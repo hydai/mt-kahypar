@@ -36,7 +36,30 @@ namespace mt_kahypar::ds {
           const HyperedgeVector& edge_vector,
           const HyperedgeWeight* edge_weight,
           const HypernodeWeight* node_weight,
-          const bool stable_construction_of_degree) {
+          const bool stable_construction_of_incident_edges) {
+    ASSERT(edge_vector.size() == num_edges);
+
+    EdgeVector edges;
+    edges.reserve(num_edges);
+    for (const auto& e : edge_vector) {
+      if (e.size() != 2) {
+        ERROR("Using graph data structure; but the input hypergraph is not a graph.");
+      }
+      edges.push_back({e[0], e[1]});
+    }
+    return construct_from_graph_edges(task_group_id, num_nodes, num_edges,
+                                      edges, edge_weight, node_weight,
+                                      stable_construction_of_incident_edges);
+  }
+
+  StaticGraph StaticGraphFactory::construct_from_graph_edges(
+          const TaskGroupID task_group_id,
+          const HypernodeID num_nodes,
+          const HyperedgeID num_edges,
+          const EdgeVector& edge_vector,
+          const HyperedgeWeight* edge_weight,
+          const HypernodeWeight* node_weight,
+          const bool stable_construction_of_incident_edges) {
     StaticGraph graph;
     graph._num_nodes = num_nodes;
     graph._num_edges = 2 * num_edges;
@@ -50,10 +73,8 @@ namespace mt_kahypar::ds {
     ThreadLocalCounter local_degree_per_vertex(num_nodes, 0);
     tbb::parallel_for(ID(0), num_edges, [&](const size_t pos) {
       Counter& num_degree_per_vertex = local_degree_per_vertex.local();
-      if (edge_vector[pos].size() != 2) {
-        ERROR("Using graph data structure; but the input hypergraph is not a graph.");
-      }
-      for ( const HypernodeID& pin : edge_vector[pos] ) {
+      const HypernodeID pins[2] = {edge_vector[pos].first, edge_vector[pos].second};
+      for (const HypernodeID& pin : pins) {
         ASSERT(pin < num_nodes, V(pin) << V(num_nodes));
         ++num_degree_per_vertex[pin];
       }
@@ -62,7 +83,7 @@ namespace mt_kahypar::ds {
     // We sum up the degree per vertex only thread local. To obtain the
     // global degree, we iterate over each thread local counter and sum it up.
     Counter num_degree_per_vertex(num_nodes, 0);
-    for ( Counter& c : local_degree_per_vertex ) {
+    for (Counter& c : local_degree_per_vertex) {
       tbb::parallel_for(ID(0), num_nodes, [&](const size_t pos) {
         num_degree_per_vertex[pos] += c[pos];
       });
@@ -84,11 +105,11 @@ namespace mt_kahypar::ds {
 
     auto setup_edges = [&] {
       tbb::parallel_for(ID(0), num_edges, [&](const size_t pos) {
-        const HypernodeID pin0 = edge_vector[pos][0];
+        const HypernodeID pin0 = edge_vector[pos].first;
         const HyperedgeID incident_edges_pos0 = degree_prefix_sum[pin0] + incident_edges_position[pin0]++;
         ASSERT(incident_edges_pos0 < graph._edges.size());
         StaticGraph::Edge& edge0 = graph._edges[incident_edges_pos0];
-        const HypernodeID pin1 = edge_vector[pos][1];
+        const HypernodeID pin1 = edge_vector[pos].second;
         const HyperedgeID incident_edges_pos1 = degree_prefix_sum[pin1] + incident_edges_position[pin1]++;
         ASSERT(incident_edges_pos1 < graph._edges.size());
         StaticGraph::Edge& edge1 = graph._edges[incident_edges_pos1];
@@ -98,7 +119,7 @@ namespace mt_kahypar::ds {
         edge1.setTarget(pin0);
         edge1.setSource(pin1);
 
-        if ( edge_weight ) {
+        if (edge_weight) {
           edge0.setWeight(edge_weight[pos]);
           edge1.setWeight(edge_weight[pos]);
         }
@@ -125,7 +146,7 @@ namespace mt_kahypar::ds {
     // Add Sentinel
     graph._nodes.back() = StaticGraph::Node(graph._edges.size());
 
-    if (stable_construction_of_degree) {
+    if (stable_construction_of_incident_edges) {
       // sort incident edges of each node, so their ordering is independent of scheduling (and the same as a typical sequential implementation)
       tbb::parallel_for(ID(0), num_nodes, [&](HypernodeID u) {
         auto b = graph._edges.begin() + graph.node(u).firstEntry();
