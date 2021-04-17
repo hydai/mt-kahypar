@@ -1,4 +1,5 @@
 set(PreprocessingSources
+        community_detection/initial_partitioning.cpp
         community_detection/parallel_louvain.cpp
         community_detection/local_moving_modularity.cpp)
 
