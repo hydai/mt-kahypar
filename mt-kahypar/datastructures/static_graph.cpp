@@ -325,8 +325,7 @@ namespace mt_kahypar::ds {
       tbb::parallel_for(ID(0), coarsened_num_nodes, [&](const HyperedgeID& coarse_node) {
         const HyperedgeID tmp_edges_start = tmp_nodes[coarse_node].firstEntry();
         const HyperedgeID edges_start = degree_mapping[coarse_node];
-        // TODO(maas): good idea? Better handle high degree nodes separately?
-        tbb::parallel_for(ID(0), degree_mapping.value(coarse_node), [&](const HyperedgeID& index) {
+        auto handle_edge = [&](const HyperedgeID& index) {
           ASSERT(tmp_edges_start + index < tmp_edges.size() && edges_start + index < hypergraph._edges.size());
           const TmpEdgeInformation& tmp_edge = tmp_edges[tmp_edges_start + index];
           Edge& edge = hypergraph.edge(edges_start + index);          
@@ -336,7 +335,15 @@ namespace mt_kahypar::ds {
           edge.setUniqueID(tmp_edge.getID());
           ASSERT(static_cast<size_t>(tmp_edge.getID()) < edge_id_mapping.size());
           edge_id_mapping[tmp_edge.getID()] = 1UL;
-        });
+        };
+
+        if (degree_mapping.value(coarse_node) > HIGH_DEGREE_CONTRACTION_THRESHOLD) {
+          tbb::parallel_for(ID(0), degree_mapping.value(coarse_node), handle_edge);
+        } else {
+          for (size_t index = 0; index < degree_mapping.value(coarse_node); ++index) {
+            handle_edge(index);
+          }
+        }
       });
       utils::Timer::instance().stop_timer("setup_edges");
     }, [&] {
