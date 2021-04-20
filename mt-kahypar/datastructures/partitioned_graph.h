@@ -153,9 +153,16 @@ private:
         _first = graph.partID(*it_begin);
         it_begin++;
         _second = graph.partID(*it_begin);
-        if (_first == _second && count == 0) {
-          _iteration_count++;
+        if (_first == _second) {
+          ++_iteration_count;
         }
+        if (_first == kInvalidPartition) {
+          ++_iteration_count;
+        } else if (_second == kInvalidPartition) {
+          ++_iteration_count;
+          _second = _first;
+        }
+        _iteration_count = std::min<unsigned int>(_iteration_count, 2);
     }
 
     // ! Returns the current partiton id.
@@ -623,6 +630,7 @@ private:
   // ! Initializes the partition of the hypergraph, if block ids are assigned with
   // ! setOnlyNodePart(...). In that case, block weights must be initialized explicitly here.
   void initializePartition(const TaskGroupID) {
+    // TODO(maas): should this reset the locks?
     initializeBlockWeights();
   }
 
