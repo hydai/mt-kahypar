@@ -371,6 +371,35 @@ namespace mt_kahypar::ds {
 
     utils::Timer::instance().stop_timer("contract_hypergraph");
 
+    HEAVY_COARSENING_ASSERT(
+      [&](){
+        parallel::scalable_vector<bool> covered_ids(hypergraph.initialNumEdges() / 2, false);
+        for (HyperedgeID e : edges()) {
+          HyperedgeID id = hypergraph.uniqueEdgeID(e);
+          covered_ids.at(id) = true;
+          bool success = false;
+          for (HyperedgeID b_edge : hypergraph.incidentEdges(edgeTarget(e))) {
+            if (edgeTarget(b_edge) == edgeSource(e)) {
+              if (hypergraph.uniqueEdgeID(b_edge) != id) {
+                return false;
+              }
+              success = true;
+              break;
+            }
+          }
+          if (!success) {
+            return false;
+          }
+        }
+        for (bool val : covered_ids) {
+          if (!val) {
+            return false;
+          }
+        }
+        return true;
+      }(),
+      "Unique edge IDs are not initialized correctly."
+    );
 
     hypergraph._total_weight = _total_weight;
     hypergraph._tmp_contraction_buffer = _tmp_contraction_buffer;
