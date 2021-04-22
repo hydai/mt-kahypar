@@ -99,7 +99,9 @@ class SequentialTwoWayFmRefiner {
     void becameCutHyperedge(const PartitionedHypergraph& phg,
                             const HyperedgeID he,
                             const parallel::scalable_vector<VertexState>& vertex_state) {
-      ASSERT(phg.connectivity(he) > 1);
+      // assertion doesn't hold for graph structure, because edge pin counts
+      // are not updated until the move is completed
+      // ASSERT(phg.connectivity(he) > 1);
       for ( const HypernodeID& pin : phg.pins(he) ) {
         ASSERT(pin <  _num_hypernodes);
         ASSERT(_num_incident_cut_hes[pin] <= phg.nodeDegree(pin));
@@ -113,7 +115,9 @@ class SequentialTwoWayFmRefiner {
     void becameNonCutHyperedge(const PartitionedHypergraph& phg,
                                const HyperedgeID he,
                                const parallel::scalable_vector<VertexState>& vertex_state) {
-      ASSERT(phg.connectivity(he) == 1);
+      // assertion doesn't hold for graph structure, because edge pin counts
+      // are not updated until the move is completed
+      // ASSERT(phg.connectivity(he) == 1);
       for ( const HypernodeID& pin : phg.pins(he) ) {
         ASSERT(pin <  _num_hypernodes);
         ASSERT(_num_incident_cut_hes[pin] > 0);
@@ -173,7 +177,6 @@ class SequentialTwoWayFmRefiner {
     _pq(context.partition.k),
     _border_vertices(phg.initialNumNodes()),
     _vertex_state(phg.initialNumNodes(), VertexState::INACTIVE),
-    // TODO(maas): fix
     _he_state(phg.initialNumEdges(), HEState::FREE) {
     ASSERT(_context.partition.k == 2);
     _pq.initialize(_phg.initialNumNodes());

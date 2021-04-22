@@ -43,6 +43,7 @@ class PseudoPeripheralStartNodes {
     PartitionedHypergraph& hypergraph = ip_data.local_partitioned_hypergraph();
     kahypar::ds::FastResetFlagArray<>& hypernodes_in_queue =
       ip_data.local_hypernode_fast_reset_flag_array();
+    // TODO(maas): fix
     kahypar::ds::FastResetFlagArray<>& hyperedges_in_queue =
       ip_data.local_hyperedge_fast_reset_flag_array();
 

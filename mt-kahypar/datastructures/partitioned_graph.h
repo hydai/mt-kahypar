@@ -412,6 +412,11 @@ private:
     return _hg->edgeWeight(e);
   }
 
+  // ! Unique id of a hyperedge, in the range of [0, initialNumEdges() / 2)
+  HyperedgeID uniqueEdgeID(const HyperedgeID e) const {
+    return _hg->uniqueEdgeID(e);
+  }
+
   // ! Sets the weight of a hyperedge
   void setEdgeWeight(const HyperedgeID e, const HyperedgeWeight weight) {
     _hg->setEdgeWeight(e, weight);
@@ -869,9 +874,9 @@ private:
     const HypernodeWeight to_weight_after = _part_weights[to].fetch_add(weight, std::memory_order_relaxed);
     const HypernodeWeight from_weight_after = _part_weights[from].fetch_sub(weight, std::memory_order_relaxed);
     if (to_weight_after <= max_weight_to && from_weight_after > 0) {
-      DBG << "<<< Start changing node part: " << V(u) << " - " << V(from) << " - " << V(to);
       report_success();
       if (HandleLocks) {
+        DBG << "<<< Start changing node part: " << V(u) << " - " << V(from) << " - " << V(to);
         parallel::scalable_vector<std::pair<HyperedgeID, PartitionID>> locks_to_restore;
         for (const HyperedgeID edge : incidentEdges(u)) {
           const PartitionID target_part = targetPartWithLockSynchronization(u, to, edge, locks_to_restore);

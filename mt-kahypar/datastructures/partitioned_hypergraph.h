@@ -81,7 +81,6 @@ private:
     _part_weights(k, CAtomic<HypernodeWeight>(0)),
     _part_ids(
         "Refinement", "part_ids", hypergraph.initialNumNodes(), false, false),
-    // TODO(maas): schlecht
     _pins_in_part(hypergraph.initialNumEdges(), k, hypergraph.maxEdgeSize(), false),
     _connectivity_set(hypergraph.initialNumEdges(), k, false),
     _move_to_penalty(
@@ -280,6 +279,11 @@ private:
   // ! Weight of a hyperedge
   HypernodeWeight edgeWeight(const HyperedgeID e) const {
     return _hg->edgeWeight(e);
+  }
+
+  // ! Unique id of a hyperedge
+  HyperedgeID uniqueEdgeID(const HyperedgeID e) const {
+    return e;
   }
 
   // ! Sets the weight of a hyperedge

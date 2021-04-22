@@ -504,6 +504,7 @@ class StaticGraph {
     return _num_removed_nodes;
   }
 
+  // TODO: still unclear whether _num_edges / 2 would be better (where edge ids are used)
   // ! Initial number of hyperedges
   HyperedgeID initialNumEdges() const {
     return _num_edges;
