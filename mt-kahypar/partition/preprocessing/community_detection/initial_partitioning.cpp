@@ -4,13 +4,13 @@
 #include "mt-kahypar/partition/factories.h"
 
 namespace mt_kahypar::community_detection {
-  ds::Clustering run_initial_partioning(Hypergraph & hypergraph, const Context& context, bool disable_randomization){
+  ds::Clustering run_initial_partioning(Hypergraph & hypergraph, const Context& context){
     ds::Clustering communities(hypergraph.initialNumNodes());
 
     Context community_detection_context(context);
     community_detection_context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
     community_detection_context.refinement.fm.algorithm = FMAlgorithm::do_nothing;
-    community_detection_context.partition.verbose_output = false;
+    //community_detection_context.partition.verbose_output = false;
     PartitionedHypergraph phg = multilevel::partition(
       hypergraph, community_detection_context, false, TBBNumaArena::GLOBAL_TASK_GROUP);
 

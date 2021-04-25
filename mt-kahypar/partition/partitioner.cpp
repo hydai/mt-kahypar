@@ -121,8 +121,9 @@ namespace mt_kahypar {
       utils::Timer::instance().stop_timer("community_detection");
       */
 
-      ds::Clustering communities = community_detection::run_initial_partioning(hypergraph, context);
+      /*ds::Clustering communities = community_detection::run_initial_partioning(hypergraph, context);
       hypergraph.setCommunityIDs(std::move(communities));
+       */
       utils::Timer::instance().stop_timer("community_detection");
 
       if (context.partition.verbose_output) {
@@ -177,6 +178,23 @@ namespace mt_kahypar {
 
     // ################## PREPROCESSING ##################
     utils::Timer::instance().start_timer("preprocessing", "Preprocessing");
+
+    parallel::MemoryPool::instance().release_mem_group("Preprocessing");
+
+    Context preprocessing_context(context);
+    preprocessing_context.preprocessing.use_community_detection = true;
+    preprocessing_context.partition.verbose_output = false;
+    preprocessing_context.refinement.label_propagation.algorithm = LabelPropagationAlgorithm::do_nothing;
+    preprocessing_context.refinement.fm.algorithm = FMAlgorithm::do_nothing;
+    PartitionedHypergraph phg = multilevel::partition(
+      hypergraph, preprocessing_context, true, TBBNumaArena::GLOBAL_TASK_GROUP);
+    hypergraph.reset();
+    parallel::MemoryPool::instance().reset();
+
+    hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
+      hypergraph.setCommunityID(hn, phg.partID(hn));
+    });
+
     preprocess(hypergraph, context);
 
     DegreeZeroHypernodeRemover degree_zero_hn_remover(context);

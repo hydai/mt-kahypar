@@ -62,6 +62,46 @@ namespace mt_kahypar::multilevel {
     }
 
     tbb::task* execute() override {
+      if (_context.preprocessing.use_community_detection) {
+        _coarsener->coarsestPartitionedHypergraph();
+        HyperedgeWeight new_km1 = metrics::km1(_coarsener->coarsestPartitionedHypergraph());
+        _coarsener->coarsestPartitionedHypergraph().doParallelForAllNodes([&](const HypernodeID &hn) {
+          if (_coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn) !=
+              _coarsener->coarsestPartitionedHypergraph().partID(hn)) {
+            PartitionID temp = _coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn);
+            _coarsener->coarsestPartitionedHypergraph().hypergraph().setCommunityID(hn,
+                                                                                    _coarsener->coarsestPartitionedHypergraph().partID(
+                                                                                      hn));
+            //_coarsener->coarsestPartitionedHypergraph().setNodePart(hn,temp);
+            _coarsener->coarsestPartitionedHypergraph().changeNodePart(hn,
+                                                                       _coarsener->coarsestPartitionedHypergraph().partID(
+                                                                         hn), temp);
+          }
+        });
+        HyperedgeWeight old_km1 = metrics::km1(_coarsener->coarsestPartitionedHypergraph());
+        if (old_km1 < new_km1) {
+          _coarsener->coarsestPartitionedHypergraph().doParallelForAllNodes([&](const HypernodeID &hn) {
+            _coarsener->coarsestPartitionedHypergraph().hypergraph().setCommunityID(hn,
+                                                                                    _coarsener->coarsestPartitionedHypergraph().partID(
+                                                                                      hn));
+          });
+        } else {
+          _coarsener->coarsestPartitionedHypergraph().doParallelForAllNodes([&](const HypernodeID &hn) {
+            if (_coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn) !=
+                _coarsener->coarsestPartitionedHypergraph().partID(hn)) {
+              PartitionID temp = _coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn);
+              _coarsener->coarsestPartitionedHypergraph().hypergraph().setCommunityID(hn,
+                                                                                      _coarsener->coarsestPartitionedHypergraph().partID(
+                                                                                        hn));
+              //_coarsener->coarsestPartitionedHypergraph().setNodePart(hn,temp);
+              _coarsener->coarsestPartitionedHypergraph().changeNodePart(hn,
+                                                                         _coarsener->coarsestPartitionedHypergraph().partID(
+                                                                           hn), temp);
+            }
+          });
+        }
+      }
+
       enableTimerAndStats();
 
       if ( _sparsifier->isSparsified() ) {
@@ -213,6 +253,7 @@ namespace mt_kahypar::multilevel {
                           _ip_context, _top_level, _task_group_id);
           initial_partitioner->initialPartition();
         }
+
       } else {
         // V-Cycle: Partition IDs are given by its community IDs
         const Hypergraph& hypergraph = phg.hypergraph();
