@@ -180,7 +180,7 @@ namespace mt_kahypar::ds {
       const size_t incident_edges_end = tmp_incident_edges_prefix_sum[coarse_node + 1];
       const size_t tmp_degree = incident_edges_end - incident_edges_start;
       // TODO(maas): is coarsened_num_nodes a sensible threshold?
-      if ( tmp_degree <= std::max(coarsened_num_nodes, HIGH_DEGREE_CONTRACTION_THRESHOLD) ) {
+      if (tmp_degree <= std::max(coarsened_num_nodes, HIGH_DEGREE_CONTRACTION_THRESHOLD)) {
         std::sort(tmp_edges.begin() + incident_edges_start, tmp_edges.begin() + incident_edges_end,
                   [](const TmpEdgeInformation& e1, const TmpEdgeInformation& e2) {
                     return e1._target < e2._target;
@@ -229,8 +229,8 @@ namespace mt_kahypar::ds {
             ++tmp_edge_index;
           }
         }
-        const HyperedgeID contracted_size = tmp_edges[valid_edge_index].isValid() ? 
-                                            (valid_edge_index - incident_edges_start + 1) : 0;
+        const bool is_non_empty = (incident_edges_start < incident_edges_end) && tmp_edges[valid_edge_index].isValid();
+        const HyperedgeID contracted_size = is_non_empty ? (valid_edge_index - incident_edges_start + 1) : 0;
         node_sizes[coarse_node] = contracted_size;
       } else {
         std::lock_guard<std::mutex> lock(high_degree_vertex_mutex);
@@ -316,6 +316,20 @@ namespace mt_kahypar::ds {
     const HyperedgeID coarsened_num_edges = degree_mapping.total_sum();
     hypergraph._num_nodes = coarsened_num_nodes;
     hypergraph._num_edges = coarsened_num_edges;
+
+    HEAVY_COARSENING_ASSERT(
+      [&]{
+        HyperedgeID last_end = 0;
+        for (size_t i = 0; i < coarsened_num_nodes; ++i) {
+          const HyperedgeID tmp_edges_start = tmp_nodes[i].firstEntry();
+          if (last_end > tmp_edges_start) {
+            return false;
+          }
+          last_end = tmp_edges_start + degree_mapping.value(i);
+        }
+        return true;
+      }()
+    );
 
     edge_id_mapping.assign(_num_edges / 2, 0);
     tbb::parallel_invoke([&] {

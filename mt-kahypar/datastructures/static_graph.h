@@ -375,7 +375,7 @@ class StaticGraph {
       return _valid_or_weight;
     }
 
-    HyperedgeWeight getID() const {
+    HyperedgeID getID() const {
       ASSERT(isValid());
       return _id;
     }
