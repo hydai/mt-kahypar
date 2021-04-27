@@ -40,7 +40,8 @@ namespace mt_kahypar::multilevel {
                    PartitionedHypergraph& partitioned_hypergraph,
                    const Context& context,
                    const bool top_level,
-                   const TaskGroupID task_group_id) :
+                   const TaskGroupID task_group_id,
+                   const bool vcycle) :
             _coarsener(nullptr),
             _sparsifier(nullptr),
             _ip_context(context),
@@ -49,7 +50,8 @@ namespace mt_kahypar::multilevel {
             _partitioned_hg(partitioned_hypergraph),
             _context(context),
             _top_level(top_level),
-            _task_group_id(task_group_id) {
+            _task_group_id(task_group_id),
+            _vcycle(vcycle) {
       // Must be empty, because final partitioned hypergraph
       // is moved into this object
       _coarsener = CoarsenerFactory::getInstance().createObject(
@@ -62,41 +64,28 @@ namespace mt_kahypar::multilevel {
     }
 
     tbb::task* execute() override {
-      if (_context.preprocessing.use_community_detection) {
-        _coarsener->coarsestPartitionedHypergraph();
-        HyperedgeWeight new_km1 = metrics::km1(_coarsener->coarsestPartitionedHypergraph());
-        _coarsener->coarsestPartitionedHypergraph().doParallelForAllNodes([&](const HypernodeID &hn) {
-          if (_coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn) !=
-              _coarsener->coarsestPartitionedHypergraph().partID(hn)) {
-            PartitionID temp = _coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn);
-            _coarsener->coarsestPartitionedHypergraph().hypergraph().setCommunityID(hn,
-                                                                                    _coarsener->coarsestPartitionedHypergraph().partID(
-                                                                                      hn));
+      if (_vcycle) {
+        PartitionedHypergraph& phg =
+          _coarsener->coarsestPartitionedHypergraph();
+        HyperedgeWeight new_km1 = metrics::km1(phg);
+        phg.doParallelForAllNodes([&](const HypernodeID &hn) {
+          if (phg.hypergraph().communityID(hn) != phg.partID(hn)) {
+            PartitionID temp = phg.hypergraph().communityID(hn);
+            phg.hypergraph().setCommunityID(hn,phg.partID(hn));
             //_coarsener->coarsestPartitionedHypergraph().setNodePart(hn,temp);
-            _coarsener->coarsestPartitionedHypergraph().changeNodePart(hn,
-                                                                       _coarsener->coarsestPartitionedHypergraph().partID(
-                                                                         hn), temp);
+            phg.changeNodePart(hn, phg.partID(hn), temp);
           }
         });
-        HyperedgeWeight old_km1 = metrics::km1(_coarsener->coarsestPartitionedHypergraph());
+        HyperedgeWeight old_km1 = metrics::km1(phg);
         if (old_km1 < new_km1) {
-          _coarsener->coarsestPartitionedHypergraph().doParallelForAllNodes([&](const HypernodeID &hn) {
-            _coarsener->coarsestPartitionedHypergraph().hypergraph().setCommunityID(hn,
-                                                                                    _coarsener->coarsestPartitionedHypergraph().partID(
-                                                                                      hn));
+          phg.doParallelForAllNodes([&](const HypernodeID &hn) {
+            phg.hypergraph().setCommunityID(hn, phg.partID(hn));
           });
         } else {
-          _coarsener->coarsestPartitionedHypergraph().doParallelForAllNodes([&](const HypernodeID &hn) {
-            if (_coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn) !=
-                _coarsener->coarsestPartitionedHypergraph().partID(hn)) {
-              PartitionID temp = _coarsener->coarsestPartitionedHypergraph().hypergraph().communityID(hn);
-              _coarsener->coarsestPartitionedHypergraph().hypergraph().setCommunityID(hn,
-                                                                                      _coarsener->coarsestPartitionedHypergraph().partID(
-                                                                                        hn));
+          phg.doParallelForAllNodes([&](const HypernodeID &hn) {
+            if (phg.hypergraph().communityID(hn) != phg.partID(hn)) {
               //_coarsener->coarsestPartitionedHypergraph().setNodePart(hn,temp);
-              _coarsener->coarsestPartitionedHypergraph().changeNodePart(hn,
-                                                                         _coarsener->coarsestPartitionedHypergraph().partID(
-                                                                           hn), temp);
+              phg.changeNodePart(hn, phg.partID(hn), phg.hypergraph().communityID(hn));
             }
           });
         }
@@ -169,6 +158,7 @@ namespace mt_kahypar::multilevel {
     const Context& _context;
     const bool _top_level;
     const TaskGroupID _task_group_id;
+    const bool _vcycle;
   };
 
   class CoarseningTask : public tbb::task {
@@ -234,35 +224,23 @@ namespace mt_kahypar::multilevel {
     void initialPartition(PartitionedHypergraph& phg) {
       io::printInitialPartitioningBanner(_context);
 
-      if ( !_vcycle ) {
-        if ( _context.initial_partitioning.remove_degree_zero_hns_before_ip ) {
-          _degree_zero_hn_remover.removeDegreeZeroHypernodes(phg.hypergraph());
-        }
+      if ( _context.initial_partitioning.remove_degree_zero_hns_before_ip ) {
+        _degree_zero_hn_remover.removeDegreeZeroHypernodes(phg.hypergraph());
+      }
 
-        if ( _context.initial_partitioning.mode == InitialPartitioningMode::direct ) {
-          disableTimerAndStats();
-          // TODO move into IP algos
-          PoolInitialPartitionerContinuation& ip_continuation = *new(allocate_continuation())
-                  PoolInitialPartitionerContinuation(
-                  phg, _ip_context, _task_group_id);
-          spawn_initial_partitioner(ip_continuation);
-        } else {
-          std::unique_ptr<IInitialPartitioner> initial_partitioner =
-                  InitialPartitionerFactory::getInstance().createObject(
-                          _ip_context.initial_partitioning.mode, phg,
-                          _ip_context, _top_level, _task_group_id);
-          initial_partitioner->initialPartition();
-        }
-
+      if ( _context.initial_partitioning.mode == InitialPartitioningMode::direct ) {
+        disableTimerAndStats();
+        // TODO move into IP algos
+        PoolInitialPartitionerContinuation& ip_continuation = *new(allocate_continuation())
+                PoolInitialPartitionerContinuation(
+                phg, _ip_context, _task_group_id);
+        spawn_initial_partitioner(ip_continuation);
       } else {
-        // V-Cycle: Partition IDs are given by its community IDs
-        const Hypergraph& hypergraph = phg.hypergraph();
-        phg.doParallelForAllNodes([&](const HypernodeID hn) {
-          const PartitionID part_id = hypergraph.communityID(hn);
-          ASSERT(part_id != kInvalidPartition && part_id < _context.partition.k);
-          phg.setOnlyNodePart(hn, part_id);
-        });
-        phg.initializePartition(_task_group_id);
+        std::unique_ptr<IInitialPartitioner> initial_partitioner =
+                InitialPartitionerFactory::getInstance().createObject(
+                        _ip_context.initial_partitioning.mode, phg,
+                        _ip_context, _top_level, _task_group_id);
+        initial_partitioner->initialPartition();
       }
     }
 
@@ -297,7 +275,7 @@ namespace mt_kahypar::multilevel {
     // The coarsening task is first executed and once it finishes the
     // refinement task continues (without blocking)
     RefinementTask& refinement_task = *new(parent.allocate_continuation())
-            RefinementTask(hypergraph, partitioned_hypergraph, context, top_level, task_group_id);
+            RefinementTask(hypergraph, partitioned_hypergraph, context, top_level, task_group_id, vcycle);
     refinement_task.set_ref_count(1);
     CoarseningTask& coarsening_task = *new(refinement_task.allocate_child()) CoarseningTask(
             hypergraph, *refinement_task._sparsifier,
