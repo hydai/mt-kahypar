@@ -153,13 +153,10 @@ private:
     /*!
      * Constructs a connectivity iterator based on a pin iterator 
      */
-    ConnectivityIterator(typename Hypergraph::IncidenceIterator it_begin, const PartitionedGraph& graph, unsigned int count) :
-      _first(0),
-      _second(0),
+    ConnectivityIterator(PartitionID first, PartitionID second, unsigned int count) :
+      _first(first),
+      _second(second),
       _iteration_count(count) {
-        _first = graph.partID(*it_begin);
-        it_begin++;
-        _second = graph.partID(*it_begin);
         if (_first == _second) {
           ++_iteration_count;
         }
@@ -365,9 +362,12 @@ private:
     ASSERT(_hg->edgeIsEnabled(e), "Hyperedge" << e << "is disabled");
     ASSERT(e < _hg->initialNumEdges(), "Hyperedge" << e << "does not exist");
     IncidenceIterator pin_it = _hg->pins(e).begin();
+    PartitionID first = partID(*pin_it);
+    ++pin_it;
+    PartitionID second = partID(*pin_it);
     return IteratorRange<ConnectivityIterator>(
-      ConnectivityIterator(pin_it, *this, 0),
-      ConnectivityIterator(pin_it, *this, 2));
+      ConnectivityIterator(first, second, 0),
+      ConnectivityIterator(first, second, 2));
   }
 
   // ####################### Hypernode Information #######################
