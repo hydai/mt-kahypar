@@ -701,10 +701,16 @@ private:
   // ! 2. Nodes are reassigned (via setOnlyNodePart() or changeNodePart() without a delta function)
   // ! 3. Nodes are moved again
   // ! Then, resetMoveState() must be called between steps 2 and 3.
-  void resetMoveState() {
-    tbb::parallel_for(ID(0), _hg->initialNumEdges() / 2, [&](const HyperedgeID id) {
-      _edge_locks[id].reset();
-    });
+  void resetMoveState(bool parallel) {
+    if (parallel) {
+      tbb::parallel_for(ID(0), _hg->initialNumEdges() / 2, [&](const HyperedgeID id) {
+        _edge_locks[id].reset();
+      });
+    } else {
+      for (HyperedgeID id = 0; id < _hg->initialNumEdges() / 2; ++id) {
+        _edge_locks[id].reset();
+      }
+    }
   }
 
   // ! Only for testing

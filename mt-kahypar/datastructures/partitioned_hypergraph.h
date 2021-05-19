@@ -815,7 +815,7 @@ private:
   // ! 2. Nodes are reassigned (via setOnlyNodePart() or changeNodePart() without a delta function)
   // ! 3. Nodes are moved again
   // ! Then, resetMoveState() must be called between steps 2 and 3.
-  void resetMoveState() {
+  void resetMoveState(bool /*parallel*/) {
     // Nothing to do here
   }
 
