@@ -21,15 +21,19 @@
 
 #include "graph.h"
 
-
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_reduce.h>
 #include <tbb/parallel_invoke.h>
 #include <tbb/enumerable_thread_specific.h>
 
+#include "mt-kahypar/datastructures/sparse_map.h"
+
+#include "mt-kahypar/parallel/stl/scalable_vector.h"
 #include "mt-kahypar/parallel/parallel_prefix_sum.h"
 #include "mt-kahypar/parallel/atomic_wrapper.h"
 #include "mt-kahypar/utils/timer.h"
+#include "mt-kahypar/parallel/parallel_counting_sort.h"
+
 
 namespace mt_kahypar::ds {
 
@@ -116,6 +120,152 @@ namespace mt_kahypar::ds {
     }
   }
 
+  Graph Graph::contract_low_memory(Clustering& communities) {
+    // map cluster IDs to consecutive range
+    vec<NodeID> mapping(numNodes(), 0);   // TODO extract?
+    tbb::parallel_for(0UL, numNodes(), [&](NodeID u) { mapping[communities[u]] = 1; });
+    parallel_prefix_sum(mapping.begin(), mapping.begin() + numNodes(), mapping.begin(), std::plus<>(), 0);
+    NodeID num_coarse_nodes = mapping[numNodes() - 1];
+    // apply mapping to cluster IDs. subtract one because prefix sum is inclusive
+    tbb::parallel_for(0UL, numNodes(), [&](NodeID u) { communities[u] = mapping[communities[u]] - 1; });
+
+    // sort nodes by cluster
+    auto get_cluster = [&](NodeID u) { assert(u < communities.size()); return communities[u]; };
+    vec<NodeID> nodes_sorted_by_cluster(std::move(mapping));    // reuse memory from mapping since it's no longer needed
+    /*auto cluster_bounds = parallel::counting_sort(nodes(), nodes_sorted_by_cluster, num_coarse_nodes,
+                                                  get_cluster, TBBNumaArena::instance().total_number_of_threads());
+*/
+    Graph coarse_graph;
+    coarse_graph._num_nodes = num_coarse_nodes;
+    coarse_graph._indices.resize(num_coarse_nodes + 1);
+    coarse_graph._node_volumes.resize(num_coarse_nodes);
+    coarse_graph._total_volume = totalVolume();
+
+    /*
+    // alternative easier counting sort implementation
+    vec<uint32_t> cluster_bounds(num_coarse_nodes + 2, 0);
+    tbb::parallel_for(0UL, numNodes(), [&](NodeID u) {
+      __atomic_fetch_add(&cluster_bounds[get_cluster(u) + 2], 1, __ATOMIC_RELAXED);
+    });
+    parallel_prefix_sum(cluster_bounds.begin(), cluster_bounds.end(), cluster_bounds.begin(), std::plus<>(), 0);
+    tbb::parallel_for(0UL, numNodes(), [&](NodeID u) {
+      size_t pos = __atomic_fetch_add(&cluster_bounds[get_cluster(u) + 1], 1, __ATOMIC_RELAXED);
+      nodes_sorted_by_cluster[pos] = u;
+    });
+     */
+
+    vec<uint32_t> cluster_bounds(num_coarse_nodes + 2, 0);
+    tbb::parallel_for(0UL, numNodes(), [&](NodeID u) {
+      __atomic_fetch_add(&cluster_bounds[get_cluster(u) + 2], 1, __ATOMIC_RELAXED);
+    });
+    parallel_prefix_sum(cluster_bounds.begin(), cluster_bounds.end(), cluster_bounds.begin(), std::plus<>(), 0);
+    tbb::parallel_for(0UL, numNodes(), [&](NodeID u) {
+      size_t pos = __atomic_fetch_add(&cluster_bounds[get_cluster(u) + 1], 1, __ATOMIC_RELAXED);
+      nodes_sorted_by_cluster[pos] = u;
+    });
+
+    // TODO pass map from local moving code?
+    struct ClearList {
+      vec<NodeID> used;
+      vec<ArcWeight> values;
+
+      ClearList(size_t n) : values(n, 0.0) { }
+    };
+    tbb::enumerable_thread_specific<ClearList> clear_lists(num_coarse_nodes);
+    tbb::enumerable_thread_specific<size_t> local_max_degree(0);
+
+    // first pass generating unique coarse arcs to determine coarse node degrees
+    tbb::parallel_for(0U, num_coarse_nodes, [&](NodeID cu) {
+      auto& clear_list = clear_lists.local();
+      ArcWeight volume_cu = 0.0;
+      for (auto i = cluster_bounds[cu]; i < cluster_bounds[cu + 1]; ++i) {
+        NodeID fu = nodes_sorted_by_cluster[i];
+        volume_cu += nodeVolume(fu);
+        for (const Arc& arc : arcsOf(fu)) {
+          NodeID cv = get_cluster(arc.head);
+          if (cv != cu && clear_list.values[cv] == 0.0) {
+            clear_list.used.push_back(cv);
+            clear_list.values[cv] = 1.0;
+          }
+        }
+      }
+      coarse_graph._indices[cu + 1] = clear_list.used.size();
+      local_max_degree.local() = std::max(local_max_degree.local(), clear_list.used.size());
+      for (const NodeID cv : clear_list.used) {
+        clear_list.values[cv] = 0.0;
+      }
+      clear_list.used.clear();
+      coarse_graph._node_volumes[cu] = volume_cu;
+    });
+
+    // prefix sum coarse node degrees for offsets to write the coarse arcs in second pass
+    parallel_prefix_sum(coarse_graph._indices.begin(), coarse_graph._indices.end(), coarse_graph._indices.begin(), std::plus<>(), 0UL);
+    size_t num_coarse_arcs = coarse_graph._indices.back();
+    // TODO get this to use reusable memory
+    coarse_graph._arcs.resize(num_coarse_arcs);
+    coarse_graph._num_arcs = num_coarse_arcs;
+    coarse_graph._max_degree = local_max_degree.combine([](size_t lhs, size_t rhs) { return std::max(lhs, rhs); });
+
+    // second pass generating unique coarse arcs
+    tbb::parallel_for(0U, num_coarse_nodes, [&](NodeID cu) {
+      auto& clear_list = clear_lists.local();
+      for (auto i = cluster_bounds[cu]; i < cluster_bounds[cu+1]; ++i) {
+        for (const Arc& arc : arcsOf(nodes_sorted_by_cluster[i])) {
+          NodeID cv = get_cluster(arc.head);
+          if (cv != cu) {
+            if (clear_list.values[cv] == 0.0) {
+              clear_list.used.push_back(cv);
+            }
+            clear_list.values[cv] += arc.weight;
+          }
+        }
+      }
+      size_t pos = coarse_graph._indices[cu];
+      for (const NodeID cv : clear_list.used) {
+        coarse_graph._arcs[pos++] = Arc(cv, clear_list.values[cv]);
+        clear_list.values[cv] = 0.0;
+      }
+      clear_list.used.clear();
+    });
+
+    coarse_graph._tmp_graph_buffer = _tmp_graph_buffer;
+    _tmp_graph_buffer = nullptr;
+
+    return coarse_graph;
+  }
+
+
+  static constexpr std::size_t kChunkSize = (1 << 15);
+
+  using LocalEdgeMemoryChunk = parallel::scalable_vector <Arc>;
+
+  struct LocalEdgeMemory {
+    LocalEdgeMemory() { current_chunk.reserve(kChunkSize); }
+
+    parallel::scalable_vector<LocalEdgeMemoryChunk> chunks;
+    LocalEdgeMemoryChunk current_chunk;
+
+    std::size_t get_current_position() const { return chunks.size() * kChunkSize + current_chunk.size(); }
+
+    void push(const NodeID c_v, const ArcWeight weight) {
+      if (current_chunk.size() == kChunkSize) { flush(); }
+      current_chunk.emplace_back(c_v, weight);
+    }
+
+    const auto &get(const std::size_t position) const { return chunks[position / kChunkSize][position % kChunkSize]; }
+
+    void flush() {
+      chunks.push_back(std::move(current_chunk));
+      current_chunk.clear();
+      current_chunk.reserve(kChunkSize);
+    }
+  };
+
+  struct BufferNode {
+    NodeID c_u;
+    std::size_t position;
+    LocalEdgeMemory *chunks;
+  };
 
   /*!
  * Contracts the graph based on the community structure passed as argument.
@@ -128,21 +278,20 @@ namespace mt_kahypar::ds {
   Graph Graph::contract(Clustering& communities) {
     ASSERT(canBeUsed());
     ASSERT(_num_nodes == communities.size());
+    //return contract_low_memory(communities);
     ASSERT(_tmp_graph_buffer);
     Graph coarse_graph;
     coarse_graph._total_volume = _total_volume;
 
-    // #################### STAGE 1 ####################
     // Compute node ids of coarse graph with a parallel prefix sum
     utils::Timer::instance().start_timer("compute_cluster_mapping", "Compute Cluster Mapping");
-    parallel::scalable_vector<size_t> mapping(_num_nodes, 0UL);
-    ds::Array<parallel::IntegralAtomicWrapper<size_t>>& tmp_pos = _tmp_graph_buffer->tmp_pos;
-    ds::Array<parallel::IntegralAtomicWrapper<size_t>>& tmp_indices = _tmp_graph_buffer->tmp_indices;
-    ds::Array<parallel::AtomicWrapper<ArcWeight>>& coarse_node_volumes = _tmp_graph_buffer->tmp_node_volumes;
+    parallel::scalable_vector<size_t> mapping(_num_nodes);
+    ds::Array<parallel::IntegralAtomicWrapper<size_t>> &tmp_indices = _tmp_graph_buffer->tmp_indices;
+    ds::Array<parallel::AtomicWrapper<ArcWeight>> &coarse_node_volumes = _tmp_graph_buffer->tmp_node_volumes;
     tbb::parallel_for(0U, static_cast<NodeID>(_num_nodes), [&](const NodeID u) {
       ASSERT(static_cast<size_t>(communities[u]) < _num_nodes);
       mapping[communities[u]] = 1UL;
-      tmp_pos[u] = 0;
+      //tmp_pos[u] = 0;
       tmp_indices[u] = 0;
       coarse_node_volumes[u].store(0.0);
     });
@@ -158,115 +307,199 @@ namespace mt_kahypar::ds {
     });
     utils::Timer::instance().stop_timer("compute_cluster_mapping");
 
-    // #################### STAGE 2 ####################
-    // Write all arcs, that will not form a selfloop in the coarse graph, into a tmp
-    // adjacence array. For that, we compute a prefix sum over the sum of all arcs
-    // in each community (which are no selfloop) and write them in parallel to
-    // the tmp adjacence array.
-    utils::Timer::instance().start_timer("construct_tmp_adjacent_array", "Construct Tmp Adjacent Array");
-    // Compute number of arcs in tmp adjacence array with parallel prefix sum
-    ASSERT(coarse_graph._num_nodes <= coarse_node_volumes.size());
-    tbb::parallel_for(0U, static_cast<NodeID>(_num_nodes), [&](const NodeID u) {
-      const NodeID coarse_u = communities[u];
-      ASSERT(static_cast<size_t>(coarse_u) < coarse_graph._num_nodes);
-      coarse_node_volumes[coarse_u] += nodeVolume(u);
-      for ( const Arc& arc : arcsOf(u) ) {
-        const NodeID coarse_v = communities[arc.head];
-        if ( coarse_u != coarse_v ) {
-          ++tmp_indices[coarse_u];
-        }
-      }
+
+    //
+    // Sort nodes into buckets: place all nodes belonging to coarse node i into the i-th bucket
+    //
+    // Count the number of nodes in each bucket, then compute the position of the bucket in the global buckets array
+    // using a prefix sum
+
+    utils::Timer::instance().start_timer("sort_nodes_into_buckets",
+                                         "Sort nodes into buckets belonging to their coarse node");
+    parallel::scalable_vector<parallel::IntegralAtomicWrapper<NodeID>> buckets_index(coarse_graph._num_nodes + 1);
+    //parallel::scalable_vector<NodeID> buckets(_num_nodes);
+    ds::Array<NodeID>& buckets = _tmp_graph_buffer->buckets;
+    tbb::parallel_for(static_cast<NodeID>(0), static_cast<NodeID>(_num_nodes),
+                      [&](const NodeID u) { buckets_index[communities[u]].fetch_add(1, std::memory_order_relaxed); });
+
+    parallel::TBBPrefixSum<parallel::IntegralAtomicWrapper<NodeID>> buckets_indices_prefix_sum(buckets_index);
+    tbb::parallel_scan(tbb::blocked_range<size_t>(0UL, buckets_index.size()), buckets_indices_prefix_sum);
+
+    ASSERT(buckets_indices_prefix_sum.total_sum() <= _num_nodes);
+    // Sort nodes into   buckets
+    tbb::parallel_for(static_cast<NodeID>(0), static_cast<NodeID>(_num_nodes), [&](const NodeID u) {
+      const std::size_t pos = buckets_index[communities[u]].fetch_sub(1, std::memory_order_relaxed) - 1;
+      buckets[pos] = u;
     });
 
-    parallel::TBBPrefixSum<parallel::IntegralAtomicWrapper<size_t>, ds::Array> tmp_indices_prefix_sum(tmp_indices);
-    tbb::parallel_scan(tbb::blocked_range<size_t>(0UL, _num_nodes), tmp_indices_prefix_sum);
+    utils::Timer::instance().stop_timer("sort_nodes_into_buckets");
 
-    // Write all arcs into corresponding tmp adjacence array blocks
-    ds::Array<Arc>& tmp_arcs = _tmp_graph_buffer->tmp_arcs;
-    ds::Array<size_t>& valid_arcs = _tmp_graph_buffer->valid_arcs;
-    tbb::parallel_for(0U, static_cast<NodeID>(_num_nodes), [&](const NodeID u) {
-      const NodeID coarse_u = communities[u];
-      ASSERT(static_cast<size_t>(coarse_u) < coarse_graph._num_nodes);
-      for ( const Arc& arc : arcsOf(u) ) {
-        const NodeID coarse_v = communities[arc.head];
-        if ( coarse_u != coarse_v ) {
-          const size_t tmp_arcs_pos = tmp_indices_prefix_sum[coarse_u] + tmp_pos[coarse_u]++;
-          ASSERT(tmp_arcs_pos < tmp_indices_prefix_sum[coarse_u + 1]);
-          tmp_arcs[tmp_arcs_pos] = Arc { coarse_v, arc.weight };
-          valid_arcs[tmp_arcs_pos] = 1UL;
-        }
-      }
-    });
-    utils::Timer::instance().stop_timer("construct_tmp_adjacent_array");
+    //
+    // Build nodes array of the coarse graph
+    // - firstly, we count the degree of each coarse node
+    // - secondly, we obtain the nodes array using a prefix sum
+    //
 
-    // #################### STAGE 3 ####################
-    // Aggregate weights of arcs that are equal in each community.
-    // Therefore, we sort the arcs according to their endpoints
-    // and aggregate weight of arcs with equal endpoints.
-    utils::Timer::instance().start_timer("contract_arcs", "Contract Arcs");
+    utils::Timer::instance().start_timer("build_indices_array", "Build indices array and node_volume array for the coarse graph");
+
+    // we don't know the number of coarse edges yet, but there are hopefully much fewer than graph.m(); hence, we allocate
+    // but don't initialize the memory
+
+    tbb::enumerable_thread_specific<SparseMap<NodeID, ArcWeight>> collector{ [&] { return SparseMap<NodeID, ArcWeight>(coarse_graph._num_nodes); }};
+    //tbb::enumerable_thread_specific<std::map<NodeID, ArcWeight>> collector{ [&] { return std::map<NodeID, ArcWeight>(); }};
+
+    //
+    // We build the coarse graph in multiple steps:
+    // (1) During the first step, we compute
+    //     - the node weight of each coarse node
+    //     - the degree of each coarse node
+    //     We can't build c_edges and c_edge_weights yet, because positioning edges in those arrays depends on c_nodes,
+    //     which we only have after computing a prefix sum over all coarse node degrees
+    //     Hence, we store edges and edge weights in unsorted auxiliary arrays during the first pass
+    // (2) We finalize c_nodes arrays by computing a prefix sum over all coarse node degrees
+    // (3) We copy coarse edges and coarse edge weights from the auxiliary arrays to c_edges and c_edge_weights
+    //
+
     tbb::enumerable_thread_specific<size_t> local_max_degree(0);
-    tbb::parallel_for(0U, static_cast<NodeID>(coarse_graph._num_nodes), [&](const NodeID u) {
-      const size_t tmp_arc_start = tmp_indices_prefix_sum[u];
-      const size_t tmp_arc_end = tmp_indices_prefix_sum[u + 1];
-      std::sort(tmp_arcs.begin() + tmp_arc_start, tmp_arcs.begin() + tmp_arc_end,
-                [&](const Arc& lhs, const Arc& rhs) {
-                  return lhs.head < rhs.head;
-                });
+    tbb::enumerable_thread_specific<LocalEdgeMemory> shared_edge_buffer;
+    tbb::enumerable_thread_specific<std::vector<BufferNode>> shared_node_buffer;
 
-      size_t arc_rep = tmp_arc_start;
-      size_t degree = tmp_arc_start < tmp_arc_end ? 1 : 0;
-      for ( size_t pos = tmp_arc_start + 1; pos < tmp_arc_end; ++pos ) {
-        if ( tmp_arcs[arc_rep].head == tmp_arcs[pos].head ) {
-          tmp_arcs[arc_rep].weight += tmp_arcs[pos].weight;
-          valid_arcs[pos] = 0UL;
-        } else {
-          arc_rep = pos;
-          ++degree;
+    //for (NodeID c_u = 0; c_u < static_cast<NodeID>(coarse_graph._num_nodes); c_u ++) {
+    tbb::parallel_for(static_cast<NodeID>(0), static_cast<NodeID>(coarse_graph._num_nodes), [&](const NodeID c_u) {
+      auto &local_collector = collector.local();
+
+      const std::size_t first = buckets_indices_prefix_sum[c_u + 1];
+      const std::size_t last = buckets_indices_prefix_sum[c_u + 2];
+
+      ASSERT(first <= buckets.size());
+      ASSERT(last <= buckets.size());
+
+      // we need an upper bound on the number of coarse edges to choose the right hash map -- sum all node degrees
+      size_t upper_bound_degree = 0;
+      for (std::size_t i = first; i < last; i++) {
+        ASSERT(i <= buckets.size());
+        const NodeID u = buckets[i];
+        upper_bound_degree += degree(u);
+      }
+      upper_bound_degree = std::min(upper_bound_degree, coarse_graph._num_nodes);
+      local_collector.setMaxSize(upper_bound_degree);
+
+      // second pass over c_u bucket: compute actual degree, node weight, edges, edge weights
+      ArcWeight c_u_weight = 0;
+      for (std::size_t i = first; i < last; i++) {
+        ASSERT(i <= buckets.size());
+        const NodeID u = buckets[i];
+        ASSERT(communities[u] == c_u);
+        ASSERT(u < _num_nodes);
+
+        c_u_weight += nodeVolume(u); // coarse node weight
+
+        // collect coarse edges
+        for (Arc e : arcsOf(u)) {
+          ASSERT(e.head < _num_nodes);
+          const NodeID c_v = communities[e.head];
+          if (c_u != c_v) {
+            ASSERT(c_v <= coarse_graph.numNodes() && c_v >= 0);
+            local_collector[c_v] += e.weight;
+          }
         }
       }
-      local_max_degree.local() = std::max(local_max_degree.local(), degree);
-    });
-    coarse_graph._max_degree = local_max_degree.combine(
-            [&](const size_t& lhs, const size_t& rhs) {
-              return std::max(lhs, rhs);
-            });
 
-    // Write all arcs to coarse graph
-    parallel::TBBPrefixSum<size_t, ds::Array> valid_arcs_prefix_sum(valid_arcs);
-    tbb::parallel_scan(tbb::blocked_range<size_t>(0UL,
-                                                  tmp_indices_prefix_sum.total_sum()), valid_arcs_prefix_sum);
-    coarse_graph._num_arcs = valid_arcs_prefix_sum.total_sum();
+      coarse_node_volumes[c_u].store(c_u_weight);          // coarse node weights are done now
+      tmp_indices[c_u + 1] = local_collector.size(); // node degree (used to build c_nodes)
+      local_max_degree.local() = std::max(local_max_degree.local(), local_collector.size());
+
+      // since we don't know the value of c_nodes[c_u] yet (so far, it only holds the nodes degree), we can't place the
+      // edges of c_u in the c_edges and c_edge_weights arrays; hence, we store them in auxiliary arrays and note their
+      // position in the auxiliary arrays
+      auto &local_edge_buffer = shared_edge_buffer.local();
+      auto &local_node_buffer = shared_node_buffer.local();
+      const std::size_t position = local_edge_buffer.get_current_position();
+      local_node_buffer.emplace_back(BufferNode{c_u, position, &local_edge_buffer});
+      for (const auto[c_v, weight] : local_collector) {
+        ASSERT(c_v <= coarse_graph.numNodes() && c_v >= 0);
+        local_edge_buffer.push(c_v, weight);
+      }
+      local_collector.clear();
+    });
+    //}
+
+    coarse_graph._max_degree = local_max_degree.combine(
+      [&](const size_t& lhs, const size_t& rhs) {
+        return std::max(lhs, rhs);
+      });
+
+    parallel::TBBPrefixSum<parallel::IntegralAtomicWrapper<size_t>, ds::Array> indices_prefix_sum(tmp_indices);
+    tbb::parallel_scan(tbb::blocked_range<size_t>(0UL, coarse_graph._num_nodes + 1), indices_prefix_sum);
+
+    coarse_graph._num_arcs = indices_prefix_sum.total_sum();
+
+    utils::Timer::instance().stop_timer("build_indices_array");
+
+    //
+    // Construct rest of the coarse graph: edges, edge weights
+    //
+
+    utils::Timer::instance().start_timer("build_arcs_array", "Build arcs array for the coarse graph");
+    parallel::scalable_vector<BufferNode> all_buffered_nodes(coarse_graph._num_nodes);
+    parallel::IntegralAtomicWrapper<std::size_t> global_pos(0);
 
     // Move memory down to coarse graph
     coarse_graph._indices = std::move(_indices);
     coarse_graph._arcs = std::move(_arcs);
     coarse_graph._node_volumes = std::move(_node_volumes);
 
-    tbb::parallel_invoke([&] {
-      const size_t tmp_num_arcs = tmp_indices_prefix_sum.total_sum();
-      tbb::parallel_for(0UL, tmp_num_arcs, [&](const size_t i) {
-        if ( valid_arcs_prefix_sum.value(i) ) {
-          const size_t pos = valid_arcs_prefix_sum[i];
-          ASSERT(pos < coarse_graph._num_arcs);
-          coarse_graph._arcs[pos] = std::move(tmp_arcs[i]);
-        }
-      });
-    }, [&] {
-      tbb::parallel_for(0U, static_cast<NodeID>(coarse_graph._num_nodes), [&](const NodeID u) {
-        const size_t start_index_pos = valid_arcs_prefix_sum[tmp_indices_prefix_sum[u]];
-        ASSERT(start_index_pos <= coarse_graph._num_arcs);
-        coarse_graph._indices[u] = start_index_pos;
-        coarse_graph._node_volumes[u] = coarse_node_volumes[u];
-      });
+    tbb::parallel_invoke(
+      [&] {
+        tbb::parallel_for(shared_edge_buffer.range(), [&](auto &r) {
+          for (auto &buffer : r) {
+            if (!buffer.current_chunk.empty()) { buffer.flush(); }
+          }
+        });
+      },
+      [&] {
+        tbb::parallel_for(shared_node_buffer.range(), [&](const auto &r) {
+          for (const auto &buffer : r) {
+            const std::size_t local_pos = global_pos.fetch_add(buffer.size());
+            std::copy(buffer.begin(), buffer.end(), all_buffered_nodes.begin() + local_pos);
+          }
+        });
+      },
+      [&] {
+        tbb::parallel_for(0U, static_cast<NodeID>(coarse_graph._num_nodes), [&](const NodeID u) {
+          const size_t start_index_pos = indices_prefix_sum[u + 1];
+          ASSERT(start_index_pos <= coarse_graph._num_arcs);
+          coarse_graph._indices[u] = start_index_pos;
+          coarse_graph._node_volumes[u] = coarse_node_volumes[u];
+        });
       coarse_graph._indices[coarse_graph._num_nodes] = coarse_graph._num_arcs;
     });
+
+    // build coarse graph
+    tbb::parallel_for(static_cast<NodeID>(0), static_cast<NodeID>(coarse_graph._num_nodes), [&](const NodeID i) {
+      const auto &buffered_node = all_buffered_nodes[i];
+      const auto *chunks = buffered_node.chunks;
+      const NodeID c_u = buffered_node.c_u;
+
+      const size_t c_u_degree = indices_prefix_sum[c_u + 2] - indices_prefix_sum[c_u + 1];
+      const NodeID first_target_index = indices_prefix_sum[c_u + 1];
+      const NodeID first_source_index = buffered_node.position;
+
+      for (std::size_t j = 0; j < c_u_degree; ++j) {
+        const auto to = first_target_index + j;
+        const auto [c_v, weight] = chunks->get(first_source_index + j);
+        ASSERT(c_v <= coarse_graph.numNodes() && c_v >= 0);
+        coarse_graph._arcs[to] = Arc(c_v, weight);
+      }
+    });
+
     coarse_graph._tmp_graph_buffer = _tmp_graph_buffer;
     _tmp_graph_buffer = nullptr;
-    utils::Timer::instance().stop_timer("contract_arcs");
+
+    utils::Timer::instance().stop_timer("build_arcs_array");
 
     return coarse_graph;
   }
-
 
   Graph::Graph() :
           _num_nodes(0),

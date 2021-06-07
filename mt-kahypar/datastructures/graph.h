@@ -47,16 +47,12 @@ class Graph {
     explicit TmpGraphBuffer(const size_t num_nodes,
                             const size_t num_arcs) :
       tmp_indices("Preprocessing", "tmp_indices", num_nodes + 1),
-      tmp_pos("Preprocessing", "tmp_pos", num_nodes),
       tmp_node_volumes("Preprocessing", "tmp_node_volumes", num_nodes),
-      tmp_arcs("Preprocessing", "tmp_arcs", num_arcs),
-      valid_arcs("Preprocessing", "valid_arcs", num_arcs) { }
+      buckets("Preprocessing", "buckets", num_nodes) { }
 
     ds::Array<parallel::IntegralAtomicWrapper<size_t>> tmp_indices;
-    ds::Array<parallel::IntegralAtomicWrapper<size_t>> tmp_pos;
     ds::Array<parallel::AtomicWrapper<ArcWeight>> tmp_node_volumes;
-    ds::Array<Arc> tmp_arcs;
-    ds::Array<size_t> valid_arcs;
+    ds::Array<NodeID> buckets;
   };
 
  public:
@@ -125,6 +121,9 @@ class Graph {
   }
 
   bool canBeUsed(const bool verbose = true) const;
+
+
+  Graph contract_low_memory(Clustering &communities);
 
   /*!
    * Contracts the graph based on the community structure passed as argument.
