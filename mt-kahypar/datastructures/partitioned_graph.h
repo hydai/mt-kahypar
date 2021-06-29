@@ -241,8 +241,8 @@ private:
   }
 
   explicit PartitionedGraph(const PartitionID k,
-                            const TaskGroupID,
-                            Hypergraph& hypergraph) :
+                            Hypergraph& hypergraph,
+                            parallel_tag_t) :
     _is_gain_cache_initialized(false),
     _k(k),
     _hg(&hypergraph),
@@ -651,7 +651,7 @@ private:
 
   // ! Initializes the partition of the hypergraph, if block ids are assigned with
   // ! setOnlyNodePart(...). In that case, block weights must be initialized explicitly here.
-  void initializePartition(const TaskGroupID) {
+  void initializePartition() {
     initializeBlockWeights();
   }
 
@@ -805,7 +805,11 @@ private:
 
   // ! Extracts a block of a partition as separate graph.
   // ! It also returns a vertex-mapping from the original graph to the sub-graph.
-  std::pair<Hypergraph, parallel::scalable_vector<HypernodeID> > extract(const TaskGroupID& task_group_id, PartitionID block, bool /*cut_net_splitting*/) {
+  std::pair<Hypergraph, parallel::scalable_vector<HypernodeID> > extract(
+    PartitionID block,
+    bool /*cut_net_splitting*/,
+    bool stable_construction_of_incident_edges
+  ) {
     ASSERT(block != kInvalidPartition && block < _k);
 
     // Compactify vertex ids
@@ -859,8 +863,8 @@ private:
 
     // Construct hypergraph
     Hypergraph extracted_graph = HypergraphFactory::construct_from_graph_edges(
-               task_group_id, num_nodes, num_edges,
-               edge_vector, edge_weight.data(), node_weight.data());
+               num_nodes, num_edges, edge_vector, edge_weight.data(), node_weight.data(),
+               stable_construction_of_incident_edges);
 
     // Set community ids
     doParallelForAllNodes([&](const HypernodeID& node) {
