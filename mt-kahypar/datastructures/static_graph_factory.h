@@ -37,8 +37,7 @@ class StaticGraphFactory {
   using ThreadLocalCounter = tbb::enumerable_thread_specific<Counter>;
 
  public:
-  static StaticGraph construct(const TaskGroupID task_group_id,
-                               const HypernodeID num_nodes,
+  static StaticGraph construct(const HypernodeID num_nodes,
                                const HyperedgeID num_edges,
                                const HyperedgeVector& edge_vector,
                                const HyperedgeWeight* edge_weight = nullptr,
@@ -47,18 +46,16 @@ class StaticGraphFactory {
 
   // ! Provides a more performant construction method by using continuous space for the edges
   // ! (instead of a separate vec per edge).
-  static StaticGraph construct_from_graph_edges(const TaskGroupID task_group_id,
-                               const HypernodeID num_nodes,
-                               const HyperedgeID num_edges,
-                               const EdgeVector& edge_vector,
-                               const HyperedgeWeight* edge_weight = nullptr,
-                               const HypernodeWeight* node_weight = nullptr,
-                               const bool stable_construction_of_incident_edges = false);
+  static StaticGraph construct_from_graph_edges(const HypernodeID num_nodes,
+                                                const HyperedgeID num_edges,
+                                                const EdgeVector& edge_vector,
+                                                const HyperedgeWeight* edge_weight = nullptr,
+                                                const HypernodeWeight* node_weight = nullptr,
+                                                const bool stable_construction_of_incident_edges = false);
 
-  static std::pair<StaticGraph,
-          parallel::scalable_vector<HypernodeID> > compactify(const TaskGroupID ,
-                                                              const StaticGraph&)
-                                                              { ERROR("Compactify not implemented for static graph."); }
+  static std::pair<StaticGraph, parallel::scalable_vector<HypernodeID> > compactify(const StaticGraph&) {
+    ERROR("Compactify not implemented for static graph.");
+  }
 
  private:
   StaticGraphFactory() { }

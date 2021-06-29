@@ -536,7 +536,7 @@ class StaticGraph {
   }
 
   // ! Computes the total node weight of the hypergraph
-  void computeAndSetTotalNodeWeight(const TaskGroupID);
+  void computeAndSetTotalNodeWeight(parallel_tag_t);
 
   // ####################### Iterators #######################
 
@@ -694,10 +694,8 @@ class StaticGraph {
    * community label (given in 'communities') to a vertex in the coarse hypergraph.
    *
    * \param communities Community structure that should be contracted
-   * \param task_group_id Task Group ID
    */
-  StaticGraph contract(parallel::scalable_vector<HypernodeID>& communities,
-                       const TaskGroupID /* task_group_id */);
+  StaticGraph contract(parallel::scalable_vector<HypernodeID>& communities);
 
   bool registerContraction(const HypernodeID, const HypernodeID) {
     ERROR("registerContraction(u, v) is not supported in static graph");
@@ -720,7 +718,7 @@ class StaticGraph {
   }
 
   VersionedBatchVector createBatchUncontractionHierarchy(const size_t) {
-    ERROR("createBatchUncontractionHierarchy(task_group_id, batch_size) is not supported in static graph");
+    ERROR("createBatchUncontractionHierarchy(batch_size) is not supported in static graph");
     return { };
   }
 
@@ -770,7 +768,7 @@ class StaticGraph {
   }
 
   // ! Copy static hypergraph in parallel
-  StaticGraph copy(const TaskGroupID /* task_group_id */);
+  StaticGraph copy(parallel_tag_t);
 
   // ! Copy static hypergraph sequential
   StaticGraph copy();

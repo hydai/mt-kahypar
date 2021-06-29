@@ -30,7 +30,6 @@ namespace mt_kahypar::ds {
 
   // TODO: more efficient construction (not using a vector of vectors)?
   StaticGraph StaticGraphFactory::construct(
-          const TaskGroupID task_group_id,
           const HypernodeID num_nodes,
           const HyperedgeID num_edges,
           const HyperedgeVector& edge_vector,
@@ -47,13 +46,12 @@ namespace mt_kahypar::ds {
       }
       edges.push_back({e[0], e[1]});
     }
-    return construct_from_graph_edges(task_group_id, num_nodes, num_edges,
-                                      edges, edge_weight, node_weight,
+    return construct_from_graph_edges(num_nodes, num_edges, edges,
+                                      edge_weight, node_weight,
                                       stable_construction_of_incident_edges);
   }
 
   StaticGraph StaticGraphFactory::construct_from_graph_edges(
-          const TaskGroupID task_group_id,
           const HypernodeID num_nodes,
           const HyperedgeID num_edges,
           const EdgeVector& edge_vector,
@@ -70,7 +68,7 @@ namespace mt_kahypar::ds {
 
     // Compute degree for each vertex
     utils::Timer::instance().start_timer("compute_ds_sizes", "Precompute DS Size", true);
-    ThreadLocalCounter local_degree_per_vertex(num_nodes, 0);
+    ThreadLocalCounter local_degree_per_vertex(num_nodes);
     tbb::parallel_for(ID(0), num_edges, [&](const size_t pos) {
       Counter& num_degree_per_vertex = local_degree_per_vertex.local();
       const HypernodeID pins[2] = {edge_vector[pos].first, edge_vector[pos].second};
@@ -159,7 +157,7 @@ namespace mt_kahypar::ds {
       });
     }
 
-    graph.computeAndSetTotalNodeWeight(task_group_id);
+    graph.computeAndSetTotalNodeWeight(parallel_tag_t());
 
     utils::Timer::instance().stop_timer("setup_hypergraph");
     return graph;
