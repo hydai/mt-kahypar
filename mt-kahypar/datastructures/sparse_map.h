@@ -688,9 +688,14 @@ class DynamicFlatMap {
   }
 
   Value& operator[] (const Key key) {
+    return get_or_insert(key).first;
+  }
+
+  // returns true if a new value was inserted
+  std::pair<Value&, bool> get_or_insert(const Key key) {
     MapElement* s = find(key);
     if (containsValidElement(key, s)) {
-      return s->value;
+      return {s->value, false};
     } else {
       if (_size + 1 > _capacity / 2) {
         grow();
@@ -698,7 +703,7 @@ class DynamicFlatMap {
       }
       *s = MapElement { key, Value(), _timestamp };
       _size++;
-      return s->value;
+      return {s->value, true};
     }
   }
 

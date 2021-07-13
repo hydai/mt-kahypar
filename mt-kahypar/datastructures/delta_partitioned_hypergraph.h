@@ -67,8 +67,43 @@ class DeltaPartitionedHypergraph {
   static constexpr bool supports_connectivity_set = false;
   static constexpr HyperedgeID HIGH_DEGREE_THRESHOLD = PartitionedHypergraph::HIGH_DEGREE_THRESHOLD;
 
+  struct LookupBitset {
+    using bitset_t = uint32_t;
+
+    static constexpr PartitionID BITSET_SIZE = 8 * sizeof(bitset_t);
+
+    // TODO: remove
+    static_assert(BITSET_SIZE == 32);
+
+    LookupBitset() : _bitset(0) { }
+
+    static uint32_t compression_offset(PartitionID k) {
+      ASSERT(k > 0);
+      // = ceil(k / BITSET_SIZE) - 1
+      return (k - 1) / BITSET_SIZE;
+    }
+
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    void set(PartitionID block, uint32_t offset) {
+      block = block >> offset;
+      ASSERT(block >= 0 && block < BITSET_SIZE);
+      _bitset |= 1 << block;
+    }
+
+    MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE
+    bool is_dirty(PartitionID block, uint32_t offset) const {
+      block = block >> offset;
+      ASSERT(block >= 0 && block < BITSET_SIZE);
+      return (_bitset & (1 << block)) != 0;
+    }
+
+   private:
+    bitset_t _bitset;
+  };
+
   DeltaPartitionedHypergraph(const PartitionID k) :
     _k(k),
+    _compression_offset(LookupBitset::compression_offset(k)),
     _phg(nullptr),
     _part_weights_delta(k, 0),
     _part_ids_delta(),
@@ -202,23 +237,31 @@ class DeltaPartitionedHypergraph {
     if (pin_count_in_from_part_after == 1) {
       for (HypernodeID u : pins(he)) {
         if (partID(u) == from) {
-          _move_from_benefit_delta[u] += we;
+          _move_from_benefit_delta[u].first += we;
         }
       }
     } else if (pin_count_in_from_part_after == 0) {
       for (HypernodeID u : pins(he)) {
-        _move_to_penalty_delta[penalty_index(u, from)] += we;
+        auto [value, inserted] = _move_to_penalty_delta.get_or_insert(penalty_index(u, from));
+        value += we;
+        if (inserted) {
+          _move_from_benefit_delta[u].second.set(from, _compression_offset);
+        }
       }
     }
 
     if (pin_count_in_to_part_after == 1) {
       for (HypernodeID u : pins(he)) {
-        _move_to_penalty_delta[penalty_index(u, to)] -= we;
+        auto [value, inserted] = _move_to_penalty_delta.get_or_insert(penalty_index(u, to));
+        value -= we;
+        if (inserted) {
+          _move_from_benefit_delta[u].second.set(to, _compression_offset);
+        }
       }
     } else if (pin_count_in_to_part_after == 2) {
       for (HypernodeID u : pins(he)) {
         if (partID(u) == to) {
-          _move_from_benefit_delta[u] -= we;
+          _move_from_benefit_delta[u].first -= we;
         }
       }
     }
@@ -252,9 +295,9 @@ class DeltaPartitionedHypergraph {
   // ! pin in its block
   HyperedgeWeight moveFromBenefit(const HypernodeID u) const {
     ASSERT(_phg);
-    const HyperedgeWeight* move_from_benefit_delta =
+    const auto* move_from_benefit_delta =
       _move_from_benefit_delta.get_if_contained(u);
-    return _phg->moveFromBenefit(u) + ( move_from_benefit_delta ? *move_from_benefit_delta : 0 );
+    return _phg->moveFromBenefit(u) + ( move_from_benefit_delta ? move_from_benefit_delta->first : 0 );
   }
 
   // ! Returns the sum of all edges incident to u, where p is not part of
@@ -264,7 +307,7 @@ class DeltaPartitionedHypergraph {
     ASSERT(p != kInvalidPartition && p < _k);
     const HyperedgeWeight* move_to_penalty_delta =
       _move_to_penalty_delta.get_if_contained(u * _k + p);
-    return _phg->moveToPenalty(u, p) + ( move_to_penalty_delta ? *move_to_penalty_delta : 0 );
+    return _phg->moveToPenalty(u, p) + (move_to_penalty_delta ? *move_to_penalty_delta : 0);
   }
 
   Gain km1Gain(const HypernodeID u, const PartitionID from, const PartitionID to) const {
@@ -350,6 +393,10 @@ class DeltaPartitionedHypergraph {
   // ! Number of blocks
   const PartitionID _k;
 
+  // ! Offset to compress the blocks into the bitset
+  // ! for hashmap lookups
+  const uint32_t _compression_offset;
+
   // ! Partitioned hypergraph where all deltas are stored relative to
   PartitionedHypergraph* _phg;
 
@@ -369,7 +416,7 @@ class DeltaPartitionedHypergraph {
 
   // ! Stores the delta of each locally touched move from benefit entry
   // ! relative to the _move_from_benefit member in '_phg'
-  DynamicFlatMap<HypernodeID, HyperedgeWeight> _move_from_benefit_delta;
+  DynamicFlatMap<HypernodeID, std::pair<HyperedgeWeight, LookupBitset>> _move_from_benefit_delta;
 };
 
 } // namespace ds
