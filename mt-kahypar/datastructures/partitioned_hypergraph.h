@@ -649,8 +649,20 @@ private:
     return _move_from_benefit[u].load(std::memory_order_relaxed);
   }
 
+  // required for compatibility to DeltaPartitionedHypergraph
+  std::pair<HyperedgeWeight, uint32_t> moveFromBenefitWithBitset(const HypernodeID u) const {
+    //ASSERT(_is_gain_cache_initialized, "Gain cache is not initialized");
+    return {_move_from_benefit[u].load(std::memory_order_relaxed), 0};
+  }
+
   HyperedgeWeight moveToPenalty(const HypernodeID u, PartitionID p) const {
     //ASSERT(_is_gain_cache_initialized, "Gain cache is not initialized");
+    return _move_to_penalty[incident_net_weight_index(u)].load(std::memory_order_relaxed) -
+      _move_to_penalty[penalty_index(u, p)].load(std::memory_order_relaxed);
+  }
+
+  // required for compatibility to DeltaPartitionedHypergraph
+  HyperedgeWeight moveToPenaltyWithBitset(const HypernodeID u, PartitionID p, const uint32_t /*bitset*/) const {
     return _move_to_penalty[incident_net_weight_index(u)].load(std::memory_order_relaxed) -
       _move_to_penalty[penalty_index(u, p)].load(std::memory_order_relaxed);
   }

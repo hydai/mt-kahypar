@@ -300,6 +300,15 @@ class DeltaPartitionedHypergraph {
     return _phg->moveFromBenefit(u) + ( move_from_benefit_delta ? move_from_benefit_delta->first : 0 );
   }
 
+  // ! Additionally contains a bitset that indicates for the hypernode u which blocks
+  // ! are dirty with respect to the move penalty.
+  std::pair<HyperedgeWeight, LookupBitset> moveFromBenefitWithBitset(const HypernodeID u) const {
+    ASSERT(_phg);
+    const auto* entry = _move_from_benefit_delta.get_if_contained(u);
+    const HyperedgeWeight value = _phg->moveFromBenefit(u) + (entry ? entry->first : 0);
+    return {value, entry ? entry->second : LookupBitset()};
+  }
+
   // ! Returns the sum of all edges incident to u, where p is not part of
   // ! their connectivity set.
   HyperedgeWeight moveToPenalty(const HypernodeID u, const PartitionID p) const {
@@ -308,6 +317,19 @@ class DeltaPartitionedHypergraph {
     const HyperedgeWeight* move_to_penalty_delta =
       _move_to_penalty_delta.get_if_contained(u * _k + p);
     return _phg->moveToPenalty(u, p) + (move_to_penalty_delta ? *move_to_penalty_delta : 0);
+  }
+
+  // ! Only performs a hashtable lookup if the bit for the corresponding block is set
+  HyperedgeWeight moveToPenaltyWithBitset(const HypernodeID u, const PartitionID p, const LookupBitset bitset) const {
+    ASSERT(_phg);
+    ASSERT(p != kInvalidPartition && p < _k);
+    HyperedgeWeight move_to_penalty = _phg->moveToPenalty(u, p);
+    if (bitset.is_dirty(p, _compression_offset)) {
+      const HyperedgeWeight* move_to_penalty_delta =
+        _move_to_penalty_delta.get_if_contained(u * _k + p);
+      move_to_penalty += move_to_penalty_delta ? *move_to_penalty_delta : 0;
+    }
+    return move_to_penalty;
   }
 
   Gain km1Gain(const HypernodeID u, const PartitionID from, const PartitionID to) const {
