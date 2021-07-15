@@ -69,13 +69,13 @@ public:
 
   void lock() {
     for (;;) {
-      if (!spinner.exchange(true, std::memory_order_acquire)) {
-       return;
-      }
       while (spinner.load(std::memory_order_relaxed)) {
         // spin
         // stack overflow says adding 'cpu_relax' instruction may improve performance
         // __builtin_ia32_pause();
+      }
+      if (!spinner.exchange(true, std::memory_order_acquire)) {
+       return;
       }
     }
   }
